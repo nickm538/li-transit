@@ -1,0 +1,109 @@
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  DATA_URLS,
+  assignRouteColors,
+  type TransitRoute,
+  type NetworkData,
+  type RouteSchedule,
+} from '@/lib/transitData';
+
+interface TransitState {
+  routes: TransitRoute[];
+  network: NetworkData | null;
+  schedules: Record<string, RouteSchedule>;
+  routeColors: Map<string, string>;
+  loading: boolean;
+  error: string | null;
+  selectedRoute: TransitRoute | null;
+  setSelectedRoute: (route: TransitRoute | null) => void;
+  lastUpdated: string | null;
+}
+
+const TransitContext = createContext<TransitState | null>(null);
+
+export function TransitProvider({ children }: { children: ReactNode }) {
+  const [routes, setRoutes] = useState<TransitRoute[]>([]);
+  const [network, setNetwork] = useState<NetworkData | null>(null);
+  const [schedules, setSchedules] = useState<Record<string, RouteSchedule>>({});
+  const [routeColors, setRouteColors] = useState<Map<string, string>>(new Map());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<TransitRoute | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Load routes and network in parallel (schedules loaded on demand)
+        const [routesRes, networkRes] = await Promise.all([
+          fetch(DATA_URLS.routes),
+          fetch(DATA_URLS.network),
+        ]);
+
+        if (!routesRes.ok || !networkRes.ok) {
+          throw new Error('Failed to fetch transit data');
+        }
+
+        const routesData: TransitRoute[] = await routesRes.json();
+        const networkData: NetworkData = await networkRes.json();
+
+        setRoutes(routesData);
+        setNetwork(networkData);
+        setRouteColors(assignRouteColors(routesData));
+        setLastUpdated(new Date().toISOString());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load transit data');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, []);
+
+  // Lazy-load schedules when needed
+  useEffect(() => {
+    if (Object.keys(schedules).length > 0) return;
+    // Load schedules in background after initial render
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(DATA_URLS.schedules);
+        if (res.ok) {
+          const data = await res.json();
+          setSchedules(data);
+        }
+      } catch {
+        // Schedules are non-critical for initial render
+        console.warn('Failed to load schedules');
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [schedules]);
+
+  return (
+    <TransitContext.Provider
+      value={{
+        routes,
+        network,
+        schedules,
+        routeColors,
+        loading,
+        error,
+        selectedRoute,
+        setSelectedRoute,
+        lastUpdated,
+      }}
+    >
+      {children}
+    </TransitContext.Provider>
+  );
+}
+
+export function useTransit() {
+  const ctx = useContext(TransitContext);
+  if (!ctx) throw new Error('useTransit must be used within TransitProvider');
+  return ctx;
+}
