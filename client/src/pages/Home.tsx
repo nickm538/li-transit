@@ -327,7 +327,7 @@ export default function Home() {
 
         {/* Map legend — Claude-warm style */}
         {!loading && !selectedRoute && (
-          <div className="absolute bottom-2 right-2 md:bottom-4 md:right-4 z-20 glass-panel rounded-xl p-2.5 md:p-3">
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 md:bottom-4 z-20 glass-panel rounded-xl p-2.5 md:p-3">
             <div
               className="text-[10px] font-medium tracking-wide uppercase mb-1.5"
               style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#b0aea5' }}

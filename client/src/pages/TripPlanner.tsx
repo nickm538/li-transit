@@ -1008,7 +1008,7 @@ export default function TripPlanner() {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="absolute bottom-4 left-3 z-30 glass-panel rounded-lg p-3 max-w-[200px]"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 glass-panel rounded-lg p-3 max-w-[200px]"
             >
               <div className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">Legend</div>
               <div className="space-y-1.5">
@@ -1050,10 +1050,14 @@ export default function TripPlanner() {
       </div>
 
       {/* Trip planner panel — bottom sheet on mobile, side panel on desktop */}
+      {/* Auto-collapse on mobile when drop mode is active so user can see the map */}
       <div className={`
         md:absolute md:top-16 md:right-3 md:bottom-3 md:w-96 md:rounded-lg
         w-full z-30 glass-panel overflow-hidden flex flex-col
-        ${panelExpanded ? 'max-h-[65dvh] md:max-h-none' : 'max-h-[140px] md:max-h-none'}
+        ${dropMode
+          ? 'max-h-[60px] md:max-h-[200px] pointer-events-none opacity-30'
+          : panelExpanded ? 'max-h-[65dvh] md:max-h-none' : 'max-h-[140px] md:max-h-none'
+        }
         transition-all duration-300 ease-in-out
         rounded-t-2xl md:rounded-lg
       `}>
