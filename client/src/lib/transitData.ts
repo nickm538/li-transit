@@ -260,3 +260,48 @@ export function formatDistance(miles: number): string {
   if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
   return `${miles.toFixed(1)} mi`;
 }
+
+// Find the nearest point index on a route shape to a given lat/lon
+export function findNearestShapeIndex(
+  lat: number,
+  lon: number,
+  shape: [number, number][]
+): number {
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < shape.length; i++) {
+    const d = haversine(lat, lon, shape[i][0], shape[i][1]);
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+// Slice a route shape between two stops, returning only the relevant portion
+// Returns the shape points from the nearest point to fromStop through to the nearest point to toStop
+export function sliceRouteShape(
+  route: TransitRoute,
+  fromStop: TransitStop,
+  toStop: TransitStop
+): [number, number][] {
+  const shape = route.shape;
+  if (!shape || shape.length < 2) return [];
+
+  const fromIdx = findNearestShapeIndex(fromStop.lat, fromStop.lon, shape);
+  const toIdx = findNearestShapeIndex(toStop.lat, toStop.lon, shape);
+
+  if (fromIdx === toIdx) {
+    return [shape[fromIdx]];
+  }
+
+  const start = Math.min(fromIdx, toIdx);
+  const end = Math.max(fromIdx, toIdx);
+
+  // Include a small buffer on each side for smoother rendering
+  const bufferStart = Math.max(0, start - 1);
+  const bufferEnd = Math.min(shape.length - 1, end + 1);
+
+  return shape.slice(bufferStart, bufferEnd + 1);
+}

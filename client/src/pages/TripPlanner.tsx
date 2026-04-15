@@ -3,6 +3,7 @@
  * Design: Transit Control Room — clean map with floating input panels
  * Features: Geolocation, Google Places Autocomplete, pin drop, optimal route calculation
  * Routing: Schedule-aware, multi-strategy (direct, transfer, walk/bike), holiday-aware
+ * Visualization: Sliced bus paths, Google walking directions, animated markers
  * Mobile: Full-screen map with bottom sheet panel, proper scrolling
  */
 import { useRef, useCallback, useState, useMemo, useEffect } from 'react';
@@ -15,13 +16,14 @@ import {
   findNearestStops, findClosestStopOnRoute, findRoutesForStop,
   estimateWalkTime, estimateBikeTime, isWalkable, isBikeable,
   getCurrentMinutes, formatDuration, formatDistance,
+  sliceRouteShape,
 } from '@/lib/transitData';
 import type { TransitRoute, TransitStop, RouteSchedule, TripSchedule } from '@/lib/transitData';
 import { Button } from '@/components/ui/button';
 import {
   MapPin, Navigation, Crosshair, Search, ArrowRight, Clock,
   Footprints, Bus, LocateFixed, Loader2, Route as RouteIcon, X,
-  GripHorizontal, Bike, AlertTriangle, Calendar,
+  GripHorizontal, Bike, AlertTriangle, Calendar, Eye,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -56,8 +58,10 @@ interface TripSegment {
 export default function TripPlanner() {
   const mapRef = useRef<google.maps.Map | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
+  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const originInputRef = useRef<HTMLInputElement | null>(null);
   const destInputRef = useRef<HTMLInputElement | null>(null);
   const originAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
@@ -114,9 +118,36 @@ export default function TripPlanner() {
     });
   }, []);
 
+  // Get walking directions from Google
+  const getWalkingPath = useCallback(async (
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number }
+  ): Promise<google.maps.LatLng[] | null> => {
+    if (!directionsServiceRef.current) return null;
+    return new Promise((resolve) => {
+      directionsServiceRef.current!.route(
+        {
+          origin: from,
+          destination: to,
+          travelMode: google.maps.TravelMode.WALKING,
+        },
+        (result, status) => {
+          if (status === 'OK' && result?.routes?.[0]?.overview_path) {
+            resolve(result.routes[0].overview_path);
+          } else {
+            resolve(null);
+          }
+        }
+      );
+    });
+  }, []);
+
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     geocoderRef.current = new google.maps.Geocoder();
+    directionsServiceRef.current = new google.maps.DirectionsService();
+    infoWindowRef.current = new google.maps.InfoWindow();
+
     map.setOptions({
       mapTypeControl: false,
       streetViewControl: true,
@@ -330,18 +361,15 @@ export default function TripPlanner() {
       const nearDestStops = findNearestStops(dest.lat, dest.lng, allStops, 15, 5);
 
       const tripResults: TripResult[] = [];
-      const seenRouteKeys = new Set<string>(); // Prevent duplicate results
+      const seenRouteKeys = new Set<string>();
 
-      // ---- STRATEGY 1: Direct routes (same route serves both origin and dest area) ----
+      // ---- STRATEGY 1: Direct routes ----
       for (const route of routes) {
-        // Find the closest stop on this route to origin
         const originMatch = findClosestStopOnRoute(origin.lat, origin.lng, route);
         const destMatch = findClosestStopOnRoute(dest.lat, dest.lng, route);
 
         if (!originMatch || !destMatch) continue;
         if (originMatch.index === destMatch.index) continue;
-
-        // Allow up to 1.5 miles walk to/from stops (generous for transit)
         if (originMatch.distance > 1.5 || destMatch.distance > 1.5) continue;
 
         const routeKey = `direct-${route.id}-${originMatch.stop.id}-${destMatch.stop.id}`;
@@ -351,7 +379,11 @@ export default function TripPlanner() {
         const color = routeColors.get(route.id) || '#00D4FF';
         const stopsCount = Math.abs(destMatch.index - originMatch.index);
 
-        // Try to find schedule-based timing
+        // Get stops between boarding and alighting
+        const startIdx = Math.min(originMatch.index, destMatch.index);
+        const endIdx = Math.max(originMatch.index, destMatch.index);
+        const stopsBetween = route.stops.slice(startIdx, endIdx + 1);
+
         const routeSched = schedules[route.id];
         let bestTrip: { dep: string; arr: string; depMin: number; arrMin: number } | null = null;
 
@@ -365,7 +397,6 @@ export default function TripPlanner() {
               const depMin = parseGtfsTime(originStopTime.departure).totalMinutes;
               const arrMin = parseGtfsTime(destStopTime.arrival).totalMinutes;
 
-              // Bus must depart after now (with walk time buffer) and arrive after departure
               const walkToStopMin = estimateWalkTime(originMatch.distance);
               if (depMin >= (nowMinutes + walkToStopMin - 5) && arrMin > depMin) {
                 if (!bestTrip || depMin < bestTrip.depMin) {
@@ -381,7 +412,6 @@ export default function TripPlanner() {
           }
         }
 
-        // Build segments
         const segments: TripSegment[] = [];
         const walkToStopDist = originMatch.distance;
         const walkFromStopDist = destMatch.distance;
@@ -398,7 +428,7 @@ export default function TripPlanner() {
 
         const busDuration = bestTrip
           ? (bestTrip.arrMin - bestTrip.depMin)
-          : Math.round(stopsCount * 2.5); // Estimate ~2.5 min per stop if no schedule
+          : Math.round(stopsCount * 2.5);
 
         segments.push({
           type: 'bus',
@@ -413,6 +443,7 @@ export default function TripPlanner() {
           arrivalTime: bestTrip?.arr || '',
           stopsCount,
           color,
+          stopsBetween,
         });
 
         if (walkFromStopDist > 0.03) {
@@ -438,23 +469,19 @@ export default function TripPlanner() {
         });
       }
 
-      // ---- STRATEGY 2: Transfer routes (two buses with a transfer point) ----
+      // ---- STRATEGY 2: Transfer routes ----
       if (tripResults.length < 3) {
-        // For each stop near origin, find routes serving it
         for (const nearOrig of nearOriginStops.slice(0, 8)) {
           const origRoutes = findRoutesForStop(nearOrig.stop.id, routes);
 
           for (const origRoute of origRoutes) {
-            // For each stop on origRoute, check if any route from there reaches near dest
             const origStopIdx = origRoute.stops.findIndex(s => s.id === nearOrig.stop.id);
             if (origStopIdx < 0) continue;
 
-            // Check transfer points (every 3rd stop to limit computation)
             for (let ti = 0; ti < origRoute.stops.length; ti += 1) {
               if (ti === origStopIdx) continue;
               const transferStop = origRoute.stops[ti];
 
-              // Find routes at this transfer stop
               const transferRoutes = findRoutesForStop(transferStop.id, routes);
 
               for (const destRoute of transferRoutes) {
@@ -472,6 +499,15 @@ export default function TripPlanner() {
                 const stopsCount1 = Math.abs(ti - origStopIdx);
                 const transferStopIdx = destRoute.stops.findIndex(s => s.id === transferStop.id);
                 const stopsCount2 = transferStopIdx >= 0 ? Math.abs(destMatch.index - transferStopIdx) : 5;
+
+                // Get stops between for each leg
+                const leg1Start = Math.min(origStopIdx, ti);
+                const leg1End = Math.max(origStopIdx, ti);
+                const stopsBetween1 = origRoute.stops.slice(leg1Start, leg1End + 1);
+
+                const leg2Start = Math.min(transferStopIdx >= 0 ? transferStopIdx : 0, destMatch.index);
+                const leg2End = Math.max(transferStopIdx >= 0 ? transferStopIdx : 0, destMatch.index);
+                const stopsBetween2 = destRoute.stops.slice(leg2Start, leg2End + 1);
 
                 const segments: TripSegment[] = [];
 
@@ -496,15 +532,16 @@ export default function TripPlanner() {
                   duration: Math.round(stopsCount1 * 2.5),
                   stopsCount: stopsCount1,
                   color: color1,
+                  stopsBetween: stopsBetween1,
                 });
 
-                // Transfer walk (usually same stop, so minimal)
+                // Transfer walk
                 segments.push({
                   type: 'walk',
                   fromName: `Transfer at ${transferStop.name}`,
                   toName: transferStop.name,
                   distance: 0,
-                  duration: 5, // 5 min transfer time
+                  duration: 5,
                 });
 
                 segments.push({
@@ -518,6 +555,7 @@ export default function TripPlanner() {
                   duration: Math.round(stopsCount2 * 2.5),
                   stopsCount: stopsCount2,
                   color: color2,
+                  stopsBetween: stopsBetween2,
                 });
 
                 if (destMatch.distance > 0.03) {
@@ -588,7 +626,6 @@ export default function TripPlanner() {
       // Sort by total duration, deduplicate very similar results
       tripResults.sort((a, b) => a.totalDuration - b.totalDuration);
 
-      // Remove near-duplicate results (same route combo within 5 min)
       const filtered: TripResult[] = [];
       for (const r of tripResults) {
         const isDupe = filtered.some(f =>
@@ -609,6 +646,8 @@ export default function TripPlanner() {
         }
       } else {
         toast.success(`Found ${filtered.length} route option${filtered.length > 1 ? 's' : ''}!`);
+        // Auto-select the first result to show visualization
+        setSelectedResult(0);
       }
     } catch (err) {
       toast.error('Error finding routes. Please try again.');
@@ -618,164 +657,300 @@ export default function TripPlanner() {
     }
   }, [originCoords, destCoords, originText, destText, routes, routeColors, schedules, allStops, geocodeAddress]);
 
-  // Update map markers and route display
+  // ============================================================
+  // MAP VISUALIZATION — draw route on map when result is selected
+  // ============================================================
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
 
-    // Clear
+    // Clear all existing overlays
     markersRef.current.forEach(m => (m.map = null));
     markersRef.current = [];
     polylinesRef.current.forEach(p => p.setMap(null));
     polylinesRef.current = [];
+    if (infoWindowRef.current) infoWindowRef.current.close();
 
-    // Origin marker
+    const map = mapRef.current;
+    const bounds = new google.maps.LatLngBounds();
+
+    // ---- Always show origin/dest markers ----
     if (originCoords) {
       const el = document.createElement('div');
-      el.innerHTML = `<div style="width:22px;height:22px;border-radius:50%;background:#00FF88;border:3px solid #0D1117;box-shadow:0 0 14px #00FF8880;"></div>`;
+      el.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;">
+          <div style="background:#0D1117;border:2px solid #00FF88;border-radius:6px;padding:2px 8px;margin-bottom:4px;white-space:nowrap;">
+            <span style="color:#00FF88;font-family:monospace;font-size:10px;font-weight:bold;">START</span>
+          </div>
+          <div style="width:20px;height:20px;border-radius:50%;background:#00FF88;border:3px solid #0D1117;box-shadow:0 0 14px #00FF8880;"></div>
+        </div>
+      `;
       const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: mapRef.current,
+        map,
         position: originCoords,
         content: el.firstElementChild as HTMLElement,
         title: 'Origin',
+        zIndex: 100,
       });
       markersRef.current.push(marker);
+      bounds.extend(originCoords);
     }
 
-    // Destination marker
     if (destCoords) {
       const el = document.createElement('div');
-      el.innerHTML = `<div style="width:22px;height:22px;border-radius:50%;background:#FF4444;border:3px solid #0D1117;box-shadow:0 0 14px #FF444480;"></div>`;
+      el.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;">
+          <div style="background:#0D1117;border:2px solid #FF4444;border-radius:6px;padding:2px 8px;margin-bottom:4px;white-space:nowrap;">
+            <span style="color:#FF4444;font-family:monospace;font-size:10px;font-weight:bold;">END</span>
+          </div>
+          <div style="width:20px;height:20px;border-radius:50%;background:#FF4444;border:3px solid #0D1117;box-shadow:0 0 14px #FF444480;"></div>
+        </div>
+      `;
       const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: mapRef.current,
+        map,
         position: destCoords,
         content: el.firstElementChild as HTMLElement,
         title: 'Destination',
+        zIndex: 100,
       });
       markersRef.current.push(marker);
+      bounds.extend(destCoords);
     }
 
-    // Show selected result route on map
+    // ---- Draw selected route visualization ----
     if (selectedResult !== null && results[selectedResult]) {
       const result = results[selectedResult];
-      const bounds = new google.maps.LatLngBounds();
-      if (originCoords) bounds.extend(originCoords);
-      if (destCoords) bounds.extend(destCoords);
 
-      result.segments.forEach(seg => {
-        if (seg.type === 'bus' && seg.route) {
-          const color = seg.color || '#00D4FF';
+      // Process each segment
+      const drawSegments = async () => {
+        for (let segIdx = 0; segIdx < result.segments.length; segIdx++) {
+          const seg = result.segments[segIdx];
 
-          // Draw the route shape
-          const line = new google.maps.Polyline({
-            path: seg.route.shape.map(([lat, lng]) => ({ lat, lng })),
-            geodesic: true,
-            strokeColor: color,
-            strokeOpacity: 0.9,
-            strokeWeight: 5,
-            map: mapRef.current,
-            zIndex: 10,
-          });
-          polylinesRef.current.push(line);
+          if (seg.type === 'bus' && seg.route && seg.fromStop && seg.toStop) {
+            const color = seg.color || '#00D4FF';
 
-          const glow = new google.maps.Polyline({
-            path: seg.route.shape.map(([lat, lng]) => ({ lat, lng })),
-            geodesic: true,
-            strokeColor: color,
-            strokeOpacity: 0.3,
-            strokeWeight: 10,
-            map: mapRef.current,
-            zIndex: 9,
-          });
-          polylinesRef.current.push(glow);
+            // Slice the route shape to only show the relevant portion
+            const slicedShape = sliceRouteShape(seg.route, seg.fromStop, seg.toStop);
+            const path = slicedShape.map(([lat, lng]) => ({ lat, lng }));
 
-          seg.route.shape.forEach(([lat, lng]) => bounds.extend({ lat, lng }));
+            if (path.length >= 2) {
+              // Glow effect (wider, semi-transparent)
+              const glow = new google.maps.Polyline({
+                path,
+                geodesic: true,
+                strokeColor: color,
+                strokeOpacity: 0.25,
+                strokeWeight: 14,
+                map,
+                zIndex: 8,
+              });
+              polylinesRef.current.push(glow);
 
-          // Show boarding and alighting stop markers
-          if (seg.fromStop) {
-            const fromEl = document.createElement('div');
-            fromEl.innerHTML = `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #0D1117;box-shadow:0 0 8px ${color}80;"></div>`;
-            const fromMarker = new google.maps.marker.AdvancedMarkerElement({
-              map: mapRef.current!,
-              position: { lat: seg.fromStop.lat, lng: seg.fromStop.lon },
-              content: fromEl.firstElementChild as HTMLElement,
-              title: `Board: ${seg.fromStop.name}`,
-            });
-            markersRef.current.push(fromMarker);
-          }
-          if (seg.toStop) {
-            const toEl = document.createElement('div');
-            toEl.innerHTML = `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #0D1117;box-shadow:0 0 8px ${color}80;"></div>`;
-            const toMarker = new google.maps.marker.AdvancedMarkerElement({
-              map: mapRef.current!,
-              position: { lat: seg.toStop.lat, lng: seg.toStop.lon },
-              content: toEl.firstElementChild as HTMLElement,
-              title: `Alight: ${seg.toStop.name}`,
-            });
-            markersRef.current.push(toMarker);
-          }
-        } else if (seg.type === 'walk' && seg.distance > 0.03) {
-          // Draw dashed walking line between points
-          // We approximate with a straight line
-          const walkPoints: google.maps.LatLngLiteral[] = [];
-          if (seg.fromStop) walkPoints.push({ lat: seg.fromStop.lat, lng: seg.fromStop.lon });
-          if (seg.toStop) walkPoints.push({ lat: seg.toStop.lat, lng: seg.toStop.lon });
+              // Main route line
+              const line = new google.maps.Polyline({
+                path,
+                geodesic: true,
+                strokeColor: color,
+                strokeOpacity: 1,
+                strokeWeight: 5,
+                map,
+                zIndex: 10,
+              });
+              polylinesRef.current.push(line);
 
-          // For first/last walk segments, use origin/dest coords
-          if (seg.fromName === 'Your Location' && originCoords) {
-            walkPoints.unshift(originCoords);
-            if (seg.toStop) walkPoints.push({ lat: seg.toStop.lat, lng: seg.toStop.lon });
-            else if (result.segments[1]?.fromStop) walkPoints.push({ lat: result.segments[1].fromStop.lat, lng: result.segments[1].fromStop.lon });
-          }
-          if (seg.toName === 'Destination' && destCoords) {
-            if (seg.fromStop) walkPoints.unshift({ lat: seg.fromStop.lat, lng: seg.fromStop.lon });
-            else {
-              const prevSeg = result.segments[result.segments.indexOf(seg) - 1];
-              if (prevSeg?.toStop) walkPoints.unshift({ lat: prevSeg.toStop.lat, lng: prevSeg.toStop.lon });
+              // Extend bounds with sliced path
+              path.forEach(p => bounds.extend(p));
             }
-            walkPoints.push(destCoords);
-          }
 
-          if (walkPoints.length >= 2) {
-            const walkLine = new google.maps.Polyline({
-              path: walkPoints,
-              geodesic: true,
-              strokeColor: '#00FF88',
-              strokeOpacity: 0,
-              strokeWeight: 3,
-              map: mapRef.current,
-              zIndex: 8,
-              icons: [{
-                icon: {
-                  path: 'M 0,-1 0,1',
-                  strokeOpacity: 0.7,
+            // Draw intermediate stops along this bus segment
+            if (seg.stopsBetween && seg.stopsBetween.length > 0) {
+              seg.stopsBetween.forEach((stop, i) => {
+                const isBoarding = stop.id === seg.fromStop!.id;
+                const isAlighting = stop.id === seg.toStop!.id;
+                const size = (isBoarding || isAlighting) ? 14 : 8;
+                const borderW = (isBoarding || isAlighting) ? 3 : 2;
+
+                const el = document.createElement('div');
+                if (isBoarding || isAlighting) {
+                  const label = isBoarding ? 'BOARD' : 'EXIT';
+                  const icon = isBoarding ? '🚌' : '🚏';
+                  el.innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+                      <div style="background:#0D1117;border:2px solid ${color};border-radius:6px;padding:2px 6px;margin-bottom:3px;white-space:nowrap;display:flex;align-items:center;gap:3px;">
+                        <span style="font-size:10px;">${icon}</span>
+                        <span style="color:${color};font-family:monospace;font-size:9px;font-weight:bold;">${label}</span>
+                      </div>
+                      <div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${borderW}px solid #0D1117;box-shadow:0 0 10px ${color}80;"></div>
+                    </div>
+                  `;
+                } else {
+                  el.innerHTML = `
+                    <div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${borderW}px solid #0D1117;opacity:0.7;cursor:pointer;"></div>
+                  `;
+                }
+
+                const marker = new google.maps.marker.AdvancedMarkerElement({
+                  map,
+                  position: { lat: stop.lat, lng: stop.lon },
+                  content: el.firstElementChild as HTMLElement,
+                  title: stop.name,
+                  zIndex: (isBoarding || isAlighting) ? 50 : 20,
+                });
+
+                // Click handler for stop info
+                marker.addListener('click', () => {
+                  if (infoWindowRef.current) {
+                    const stopNum = i + 1;
+                    const totalStops = seg.stopsBetween!.length;
+                    let statusLabel = '';
+                    if (isBoarding) statusLabel = '<span style="color:#00FF88;font-weight:bold;">BOARDING STOP</span>';
+                    else if (isAlighting) statusLabel = '<span style="color:#FF4444;font-weight:bold;">EXIT STOP</span>';
+                    else statusLabel = `<span style="color:${color};">Stop ${stopNum} of ${totalStops}</span>`;
+
+                    infoWindowRef.current.setContent(`
+                      <div style="background:#0D1117;color:#E0E0E0;padding:10px 14px;border-radius:8px;font-family:'JetBrains Mono',monospace;min-width:180px;border:1px solid ${color}40;">
+                        <div style="font-size:12px;font-weight:bold;color:${color};margin-bottom:4px;">${stop.name}</div>
+                        <div style="font-size:10px;color:#888;margin-bottom:6px;">${statusLabel}</div>
+                        <div style="font-size:10px;color:#666;">
+                          Route ${seg.route!.short_name} — ${seg.route!.county} County<br/>
+                          ${stop.lat.toFixed(5)}, ${stop.lon.toFixed(5)}
+                        </div>
+                      </div>
+                    `);
+                    infoWindowRef.current.open(map, marker);
+                  }
+                });
+
+                markersRef.current.push(marker);
+              });
+            }
+
+          } else if (seg.type === 'walk' && seg.distance > 0.03) {
+            // Determine walk endpoints
+            let walkFrom: { lat: number; lng: number } | null = null;
+            let walkTo: { lat: number; lng: number } | null = null;
+
+            if (seg.fromName === 'Your Location' && originCoords) {
+              walkFrom = originCoords;
+              // Find the next bus segment's fromStop
+              const nextSeg = result.segments[segIdx + 1];
+              if (nextSeg?.fromStop) {
+                walkTo = { lat: nextSeg.fromStop.lat, lng: nextSeg.fromStop.lon };
+              }
+            } else if (seg.toName === 'Destination' && destCoords) {
+              walkTo = destCoords;
+              // Find the previous bus segment's toStop
+              const prevSeg = result.segments[segIdx - 1];
+              if (prevSeg?.toStop) {
+                walkFrom = { lat: prevSeg.toStop.lat, lng: prevSeg.toStop.lon };
+              }
+            } else if (seg.fromStop && seg.toStop) {
+              walkFrom = { lat: seg.fromStop.lat, lng: seg.fromStop.lon };
+              walkTo = { lat: seg.toStop.lat, lng: seg.toStop.lon };
+            }
+
+            if (walkFrom && walkTo) {
+              // Try Google walking directions for realistic path
+              const walkPath = await getWalkingPath(walkFrom, walkTo);
+
+              if (walkPath && walkPath.length >= 2) {
+                // Use Google's walking path
+                const walkLine = new google.maps.Polyline({
+                  path: walkPath,
+                  geodesic: true,
                   strokeColor: '#00FF88',
-                  scale: 3,
-                },
-                offset: '0',
-                repeat: '12px',
-              }],
-            });
-            polylinesRef.current.push(walkLine);
+                  strokeOpacity: 0,
+                  strokeWeight: 4,
+                  map,
+                  zIndex: 7,
+                  icons: [{
+                    icon: {
+                      path: 'M 0,-1 0,1',
+                      strokeOpacity: 0.8,
+                      strokeColor: '#00FF88',
+                      scale: 3,
+                    },
+                    offset: '0',
+                    repeat: '10px',
+                  }],
+                });
+                polylinesRef.current.push(walkLine);
+                walkPath.forEach(p => bounds.extend(p));
+              } else {
+                // Fallback: straight dashed line
+                const walkLine = new google.maps.Polyline({
+                  path: [walkFrom, walkTo],
+                  geodesic: true,
+                  strokeColor: '#00FF88',
+                  strokeOpacity: 0,
+                  strokeWeight: 4,
+                  map,
+                  zIndex: 7,
+                  icons: [{
+                    icon: {
+                      path: 'M 0,-1 0,1',
+                      strokeOpacity: 0.8,
+                      strokeColor: '#00FF88',
+                      scale: 3,
+                    },
+                    offset: '0',
+                    repeat: '10px',
+                  }],
+                });
+                polylinesRef.current.push(walkLine);
+              }
+
+              bounds.extend(walkFrom);
+              bounds.extend(walkTo);
+            }
+
+          } else if (seg.type === 'bike' && seg.distance > 0.03) {
+            // Bike segment — use origin/dest
+            if (originCoords && destCoords) {
+              const bikeLine = new google.maps.Polyline({
+                path: [originCoords, destCoords],
+                geodesic: true,
+                strokeColor: '#FFD700',
+                strokeOpacity: 0,
+                strokeWeight: 4,
+                map,
+                zIndex: 7,
+                icons: [{
+                  icon: {
+                    path: 'M 0,-1 0,1',
+                    strokeOpacity: 0.8,
+                    strokeColor: '#FFD700',
+                    scale: 3,
+                  },
+                  offset: '0',
+                  repeat: '14px',
+                }],
+              });
+              polylinesRef.current.push(bikeLine);
+            }
           }
         }
-      });
 
-      const isMobile = window.innerWidth < 768;
-      mapRef.current.fitBounds(bounds, isMobile
-        ? { top: 80, bottom: 280, left: 20, right: 20 }
-        : { top: 80, bottom: 20, left: 20, right: 420 }
-      );
+        // Fit bounds with padding
+        if (!bounds.isEmpty()) {
+          const isMobile = window.innerWidth < 768;
+          map.fitBounds(bounds, isMobile
+            ? { top: 80, bottom: 280, left: 20, right: 20 }
+            : { top: 80, bottom: 40, left: 40, right: 420 }
+          );
+        }
+      };
+
+      drawSegments();
+
     } else if (originCoords && destCoords) {
-      const bounds = new google.maps.LatLngBounds();
-      bounds.extend(originCoords);
-      bounds.extend(destCoords);
+      // No result selected — just show origin/dest
       const isMobile = window.innerWidth < 768;
-      mapRef.current.fitBounds(bounds, isMobile
+      map.fitBounds(bounds, isMobile
         ? { top: 80, bottom: 200, left: 20, right: 20 }
         : { top: 80, bottom: 20, left: 20, right: 420 }
       );
     }
-  }, [mapReady, originCoords, destCoords, results, selectedResult]);
+  }, [mapReady, originCoords, destCoords, results, selectedResult, getWalkingPath]);
 
   const currentDayType = getDayType();
   const now = new Date();
@@ -825,6 +1000,53 @@ export default function TripPlanner() {
             <span className="font-mono text-[10px] text-muted-foreground">Loading schedules...</span>
           </div>
         )}
+
+        {/* Route visualization legend — shown when a result is selected */}
+        <AnimatePresence>
+          {selectedResult !== null && results[selectedResult] && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="absolute bottom-4 left-3 z-30 glass-panel rounded-lg p-3 max-w-[200px]"
+            >
+              <div className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">Legend</div>
+              <div className="space-y-1.5">
+                {results[selectedResult].segments
+                  .filter(s => s.type === 'bus')
+                  .map((seg, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-4 h-1 rounded-full" style={{ backgroundColor: seg.color }} />
+                      <span className="font-mono text-[10px] text-foreground">
+                        Route {seg.route?.short_name}
+                      </span>
+                    </div>
+                  ))
+                }
+                {results[selectedResult].segments.some(s => s.type === 'walk' && s.distance > 0.03) && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-0 border-t-2 border-dashed border-[#00FF88]" />
+                    <span className="font-mono text-[10px] text-[#00FF88]">Walking</span>
+                  </div>
+                )}
+                {results[selectedResult].segments.some(s => s.type === 'bike') && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-0 border-t-2 border-dashed border-[#FFD700]" />
+                    <span className="font-mono text-[10px] text-[#FFD700]">Biking</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 pt-1 border-t border-border/30">
+                  <div className="w-3 h-3 rounded-full bg-[#00FF88] border-2 border-[#0D1117]" />
+                  <span className="font-mono text-[10px] text-muted-foreground">Start</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-[#FF4444] border-2 border-[#0D1117]" />
+                  <span className="font-mono text-[10px] text-muted-foreground">End</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Trip planner panel — bottom sheet on mobile, side panel on desktop */}
@@ -974,7 +1196,7 @@ export default function TripPlanner() {
                   className={`
                     w-full text-left p-3 rounded-lg mb-2 transition-all border
                     ${selectedResult === i
-                      ? 'bg-white/10 border-[#00D4FF]/30'
+                      ? 'bg-white/10 border-[#00D4FF]/40 ring-1 ring-[#00D4FF]/20'
                       : 'bg-white/5 border-transparent hover:bg-white/8 hover:border-border/30'
                     }
                   `}
@@ -998,9 +1220,14 @@ export default function TripPlanner() {
                         </span>
                       )}
                     </div>
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {formatDistance(result.totalDistance)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedResult === i && (
+                        <Eye className="w-3 h-3 text-[#00D4FF]" />
+                      )}
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {formatDistance(result.totalDistance)}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Time info */}
@@ -1057,13 +1284,19 @@ export default function TripPlanner() {
                       >
                         {result.segments.map((seg, j) => (
                           <div key={j} className="flex items-start gap-2.5 py-1.5">
-                            <div className="mt-0.5">
+                            <div className="mt-0.5 flex flex-col items-center">
                               {seg.type === 'walk' ? (
                                 <Footprints className="w-3.5 h-3.5 text-[#00FF88]" />
                               ) : seg.type === 'bike' ? (
                                 <Bike className="w-3.5 h-3.5 text-[#FFD700]" />
                               ) : (
                                 <Bus className="w-3.5 h-3.5" style={{ color: seg.color }} />
+                              )}
+                              {j < result.segments.length - 1 && (
+                                <div className="w-px h-4 mt-1" style={{
+                                  background: seg.type === 'bus' ? seg.color : seg.type === 'walk' ? '#00FF88' : '#FFD700',
+                                  opacity: 0.3,
+                                }} />
                               )}
                             </div>
                             <div className="flex-1">
@@ -1088,6 +1321,11 @@ export default function TripPlanner() {
                               {seg.type === 'bus' && !seg.departureTime && (
                                 <div className="text-[10px] font-mono mt-0.5 text-muted-foreground/60">
                                   Estimated ~{seg.duration} min ride
+                                </div>
+                              )}
+                              {seg.type === 'bus' && seg.stopsBetween && seg.stopsBetween.length > 2 && (
+                                <div className="text-[10px] font-mono mt-0.5 text-muted-foreground/40">
+                                  {seg.stopsBetween.length} stops along route
                                 </div>
                               )}
                             </div>
