@@ -302,7 +302,7 @@ body {
   user-select: none;
   overflow: hidden;
 }
-.map-container > div {
+.map-container > div:first-child {
   width: 100% !important;
   height: 100% !important;
 }
