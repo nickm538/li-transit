@@ -2,6 +2,7 @@
  * NavHeader — Transit Control Room navigation
  * Design: Dark industrial, glass panel, JetBrains Mono for data, DM Sans for labels
  * Colors: Electric blue (#00D4FF) Suffolk, Amber (#FFB020) Nassau
+ * Mobile: Compact header with visible tab labels
  */
 import { Link, useLocation } from 'wouter';
 import { Bus, MapPin, Navigation, Wifi } from 'lucide-react';
@@ -10,7 +11,7 @@ import { motion } from 'framer-motion';
 
 export default function NavHeader() {
   const [location] = useLocation();
-  const { routes, loading, lastUpdated } = useTransit();
+  const { routes, loading } = useTransit();
 
   const suffolkCount = routes.filter(r => r.county === 'Suffolk').length;
   const nassauCount = routes.filter(r => r.county === 'Nassau').length;
@@ -22,24 +23,24 @@ export default function NavHeader() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass-panel">
-      <div className="flex items-center justify-between h-14 px-4 md:px-6">
+      <div className="flex items-center justify-between h-14 px-3 md:px-6">
         {/* Logo / Brand */}
-        <Link href="/" className="flex items-center gap-2.5 no-underline">
+        <Link href="/" className="flex items-center gap-2 no-underline shrink-0">
           <div className="relative">
-            <Bus className="w-6 h-6 text-[#00D4FF]" />
+            <Bus className="w-5 h-5 md:w-6 md:h-6 text-[#00D4FF]" />
             <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#00FF88] pulse-marker" />
           </div>
           <div className="flex flex-col">
-            <span className="font-mono text-sm font-bold tracking-wider text-foreground leading-none">
+            <span className="font-mono text-xs md:text-sm font-bold tracking-wider text-foreground leading-none">
               LI TRANSIT
             </span>
-            <span className="text-[10px] text-muted-foreground tracking-widest uppercase leading-none mt-0.5">
+            <span className="text-[8px] md:text-[10px] text-muted-foreground tracking-widest uppercase leading-none mt-0.5">
               Navigator
             </span>
           </div>
         </Link>
 
-        {/* Tab Navigation */}
+        {/* Tab Navigation — always show labels */}
         <nav className="flex items-center gap-1">
           {tabs.map(tab => {
             const isActive = location === tab.path;
@@ -48,7 +49,7 @@ export default function NavHeader() {
               <Link key={tab.path} href={tab.path}>
                 <motion.div
                   className={`
-                    relative flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors
+                    relative flex items-center gap-1.5 px-3 py-2 rounded-md text-xs md:text-sm font-medium transition-colors
                     ${isActive
                       ? 'text-[#00D4FF] bg-[#00D4FF]/10'
                       : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
@@ -58,7 +59,7 @@ export default function NavHeader() {
                   whileTap={{ scale: 0.98 }}
                 >
                   <Icon className="w-4 h-4" />
-                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span>{tab.label}</span>
                   {isActive && (
                     <motion.div
                       layoutId="activeTab"
@@ -72,7 +73,7 @@ export default function NavHeader() {
           })}
         </nav>
 
-        {/* Status indicators */}
+        {/* Status indicators — desktop only */}
         <div className="hidden md:flex items-center gap-4 text-xs font-mono">
           <div className="flex items-center gap-1.5">
             <span className="text-[#00D4FF]">{suffolkCount}</span>
@@ -90,6 +91,11 @@ export default function NavHeader() {
               {loading ? 'SYNC' : 'LIVE'}
             </span>
           </div>
+        </div>
+
+        {/* Mobile status — compact */}
+        <div className="flex md:hidden items-center gap-1.5">
+          <Wifi className={`w-3 h-3 ${loading ? 'text-[#FFB020] animate-pulse' : 'text-[#00FF88]'}`} />
         </div>
       </div>
     </header>

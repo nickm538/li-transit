@@ -1,12 +1,12 @@
 /*
  * RouteDetail — Expanded view when a route is selected
  * Shows stops, schedule, and route info in a glass panel
+ * Mobile: Bottom sheet, Desktop: Right side panel
  */
 import { useMemo } from 'react';
 import { useTransit } from '@/contexts/TransitContext';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { X, Clock, MapPin, ArrowDown } from 'lucide-react';
+import { X, Clock, MapPin, GripHorizontal } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getDayType, formatTime, type TripSchedule } from '@/lib/transitData';
 
@@ -21,7 +21,6 @@ export default function RouteDetail() {
   const routeSchedule = useMemo(() => {
     if (!selectedRoute || !schedules[selectedRoute.id]) return [];
     const sched = schedules[selectedRoute.id][dayType] || [];
-    // Get next few trips from current time
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     return sched.filter(trip => {
@@ -40,10 +39,21 @@ export default function RouteDetail() {
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 320, opacity: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="absolute top-16 right-3 bottom-3 w-80 md:w-96 z-30 glass-panel rounded-lg overflow-hidden flex flex-col"
+      className="
+        fixed md:absolute
+        bottom-0 left-0 right-0 md:left-auto
+        md:top-16 md:right-3 md:bottom-3 md:w-96
+        max-h-[70dvh] md:max-h-none
+        z-30 glass-panel rounded-t-2xl md:rounded-lg overflow-hidden flex flex-col
+      "
     >
+      {/* Mobile drag handle */}
+      <div className="md:hidden flex items-center justify-center py-1.5 border-b border-border/30">
+        <GripHorizontal className="w-6 h-2 text-muted-foreground" />
+      </div>
+
       {/* Header */}
-      <div className="p-4 border-b border-border/50">
+      <div className="p-3 md:p-4 border-b border-border/50 shrink-0">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div
@@ -82,9 +92,10 @@ export default function RouteDetail() {
         </div>
       </div>
 
-      <ScrollArea className="flex-1 custom-scrollbar">
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
         {/* Schedule section */}
-        <div className="p-4 border-b border-border/30">
+        <div className="p-3 md:p-4 border-b border-border/30">
           <div className="flex items-center gap-2 mb-3">
             <Clock className="w-3.5 h-3.5" style={{ color }} />
             <span className="text-xs font-mono font-bold tracking-wider uppercase" style={{ color }}>
@@ -94,7 +105,7 @@ export default function RouteDetail() {
 
           {routeSchedule.length > 0 ? (
             <div className="space-y-1.5">
-              {routeSchedule.map((trip, i) => {
+              {routeSchedule.map((trip) => {
                 const firstStop = trip.stops[0];
                 const lastStop = trip.stops[trip.stops.length - 1];
                 return (
@@ -126,7 +137,7 @@ export default function RouteDetail() {
         </div>
 
         {/* Stops section */}
-        <div className="p-4">
+        <div className="p-3 md:p-4 pb-6">
           <div className="flex items-center gap-2 mb-3">
             <MapPin className="w-3.5 h-3.5" style={{ color }} />
             <span className="text-xs font-mono font-bold tracking-wider uppercase" style={{ color }}>
@@ -144,7 +155,6 @@ export default function RouteDetail() {
             <div className="space-y-0">
               {selectedRoute.stops.map((stop, i) => (
                 <div key={stop.id} className="flex items-start gap-3 py-1.5 group">
-                  {/* Stop dot */}
                   <div className="relative z-10 mt-0.5">
                     <div
                       className="w-[15px] h-[15px] rounded-full border-2 bg-background transition-all group-hover:scale-125"
@@ -154,7 +164,6 @@ export default function RouteDetail() {
                       }}
                     />
                   </div>
-                  {/* Stop info */}
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-foreground truncate group-hover:text-white transition-colors">
                       {stop.name}
@@ -163,7 +172,6 @@ export default function RouteDetail() {
                       {stop.lat.toFixed(4)}, {stop.lon.toFixed(4)}
                     </div>
                   </div>
-                  {/* Stop number */}
                   <span className="text-[10px] text-muted-foreground font-mono shrink-0 mt-0.5">
                     #{i + 1}
                   </span>
@@ -172,7 +180,7 @@ export default function RouteDetail() {
             </div>
           </div>
         </div>
-      </ScrollArea>
+      </div>
     </motion.div>
   );
 }

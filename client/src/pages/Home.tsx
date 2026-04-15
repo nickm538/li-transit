@@ -1,7 +1,8 @@
 /*
  * Home — Explore page with full Long Island map + all bus route overlays
  * Design: Transit Control Room — dark, full-bleed map, glass panels
- * Map: Google Maps with dark style, all 69 routes overlaid with unique colors
+ * Map: Google Maps with all 69 routes overlaid with unique colors
+ * Mobile: Bottom sheet for route list, responsive panels
  */
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { MapView } from '@/components/Map';
@@ -13,8 +14,6 @@ import { LI_CENTER } from '@/lib/transitData';
 import { Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { SidebarProvider, MobileSidebarToggle } from '@/components/MobileSidebarToggle';
-
-
 
 export default function Home() {
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -45,11 +44,9 @@ export default function Home() {
   useEffect(() => {
     if (!mapReady || !mapRef.current || routes.length === 0) return;
 
-    // Clear existing polylines
     polylinesRef.current.forEach(p => p.setMap(null));
     polylinesRef.current = [];
 
-    // Draw each route
     routes.forEach(route => {
       if (!route.shape || route.shape.length < 2) return;
 
@@ -57,7 +54,6 @@ export default function Home() {
       const isSelected = selectedRoute?.id === route.id;
       const hasSelection = selectedRoute !== null;
 
-      // Glow line (thicker, semi-transparent, behind)
       const glowLine = new google.maps.Polyline({
         path: route.shape.map(([lat, lng]) => ({ lat, lng })),
         geodesic: true,
@@ -68,7 +64,6 @@ export default function Home() {
         zIndex: isSelected ? 10 : 1,
       });
 
-      // Main line
       const mainLine = new google.maps.Polyline({
         path: route.shape.map(([lat, lng]) => ({ lat, lng })),
         geodesic: true,
@@ -79,7 +74,6 @@ export default function Home() {
         zIndex: isSelected ? 11 : 2,
       });
 
-      // Click handler
       mainLine.addListener('click', () => {
         setSelectedRoute(selectedRoute?.id === route.id ? null : route);
       });
@@ -87,7 +81,6 @@ export default function Home() {
         setSelectedRoute(selectedRoute?.id === route.id ? null : route);
       });
 
-      // Hover effects
       mainLine.addListener('mouseover', () => {
         if (!selectedRoute || selectedRoute.id !== route.id) {
           mainLine.setOptions({ strokeOpacity: 1, strokeWeight: 3.5 });
@@ -115,7 +108,6 @@ export default function Home() {
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
 
-    // Clear existing markers
     markersRef.current.forEach(m => (m.map = null));
     markersRef.current = [];
 
@@ -144,77 +136,81 @@ export default function Home() {
       markersRef.current.push(marker);
     });
 
-    // Fit map to selected route bounds
+    // Fit map to selected route bounds — responsive padding
     if (selectedRoute.shape.length > 0) {
       const bounds = new google.maps.LatLngBounds();
       selectedRoute.shape.forEach(([lat, lng]) => bounds.extend({ lat, lng }));
-      mapRef.current.fitBounds(bounds, { top: 80, bottom: 20, left: 340, right: 420 });
+      const isMobile = window.innerWidth < 768;
+      mapRef.current.fitBounds(bounds, isMobile
+        ? { top: 80, bottom: 20, left: 20, right: 20 }
+        : { top: 80, bottom: 20, left: 340, right: 420 }
+      );
     }
   }, [mapReady, selectedRoute, routeColors]);
 
   return (
     <SidebarProvider>
-    <div className="h-screen w-screen overflow-hidden bg-background relative">
-      <NavHeader />
-      <MobileSidebarToggle />
+      <div className="h-[100dvh] w-screen overflow-hidden bg-background relative">
+        <NavHeader />
+        <MobileSidebarToggle />
 
-      {/* Loading overlay */}
-      <AnimatePresence>
-        {loading && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background"
-          >
-            <div className="relative mb-6">
-              <Loader2 className="w-10 h-10 text-[#00D4FF] animate-spin" />
-              <div className="absolute inset-0 w-10 h-10 rounded-full border border-[#00D4FF]/20 animate-ping" />
+        {/* Loading overlay */}
+        <AnimatePresence>
+          {loading && (
+            <motion.div
+              initial={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background"
+            >
+              <div className="relative mb-6">
+                <Loader2 className="w-10 h-10 text-[#00D4FF] animate-spin" />
+                <div className="absolute inset-0 w-10 h-10 rounded-full border border-[#00D4FF]/20 animate-ping" />
+              </div>
+              <div className="font-mono text-sm text-[#00D4FF] tracking-wider animate-pulse">
+                LOADING TRANSIT DATA
+              </div>
+              <div className="font-mono text-xs text-muted-foreground mt-2">
+                69 routes &middot; 4,748 stops &middot; Nassau &amp; Suffolk
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Map */}
+        <MapView
+          className="w-full h-full"
+          initialCenter={LI_CENTER}
+          initialZoom={10}
+          onMapReady={handleMapReady}
+        />
+
+        {/* Sidebar */}
+        {!loading && <RouteSidebar />}
+
+        {/* Route detail panel */}
+        <AnimatePresence>
+          {selectedRoute && <RouteDetail />}
+        </AnimatePresence>
+
+        {/* Map legend — repositioned for mobile */}
+        {!loading && (
+          <div className="absolute bottom-2 right-2 md:bottom-4 md:right-4 z-20 glass-panel rounded-lg p-2 md:p-3">
+            <div className="text-[10px] font-mono font-bold tracking-wider text-muted-foreground uppercase mb-1.5">
+              Legend
             </div>
-            <div className="font-mono text-sm text-[#00D4FF] tracking-wider animate-pulse">
-              LOADING TRANSIT DATA
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-0.5 rounded-full bg-[#00D4FF]" style={{ boxShadow: '0 0 4px #00D4FF80' }} />
+                <span className="text-[10px] text-[#00D4FF] font-mono">Suffolk Transit</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-0.5 rounded-full bg-[#FFB020]" style={{ boxShadow: '0 0 4px #FFB02080' }} />
+                <span className="text-[10px] text-[#FFB020] font-mono">NICE Bus (Nassau)</span>
+              </div>
             </div>
-            <div className="font-mono text-xs text-muted-foreground mt-2">
-              69 routes &middot; 4,748 stops &middot; Nassau &amp; Suffolk
-            </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
-
-      {/* Map */}
-      <MapView
-        className="w-full h-full"
-        initialCenter={LI_CENTER}
-        initialZoom={10}
-        onMapReady={handleMapReady}
-      />
-
-      {/* Sidebar */}
-      {!loading && <RouteSidebar />}
-
-      {/* Route detail panel */}
-      <AnimatePresence>
-        {selectedRoute && <RouteDetail />}
-      </AnimatePresence>
-
-      {/* Map legend */}
-      {!loading && (
-        <div className="absolute bottom-4 right-4 z-20 glass-panel rounded-lg p-3">
-          <div className="text-[10px] font-mono font-bold tracking-wider text-muted-foreground uppercase mb-2">
-            Legend
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 rounded-full bg-[#00D4FF]" style={{ boxShadow: '0 0 4px #00D4FF80' }} />
-              <span className="text-[10px] text-[#00D4FF] font-mono">Suffolk Transit</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 rounded-full bg-[#FFB020]" style={{ boxShadow: '0 0 4px #FFB02080' }} />
-              <span className="text-[10px] text-[#FFB020] font-mono">NICE Bus (Nassau)</span>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
     </SidebarProvider>
   );
 }
