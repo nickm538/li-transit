@@ -13,6 +13,7 @@ interface TransitState {
   schedules: Record<string, RouteSchedule>;
   routeColors: Map<string, string>;
   loading: boolean;
+  schedulesLoading: boolean;
   error: string | null;
   selectedRoute: TransitRoute | null;
   setSelectedRoute: (route: TransitRoute | null) => void;
@@ -27,6 +28,7 @@ export function TransitProvider({ children }: { children: ReactNode }) {
   const [schedules, setSchedules] = useState<Record<string, RouteSchedule>>({});
   const [routeColors, setRouteColors] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [schedulesLoading, setSchedulesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<TransitRoute | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -37,10 +39,11 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         setLoading(true);
         setError(null);
 
-        // Load routes and network in parallel (schedules loaded on demand)
-        const [routesRes, networkRes] = await Promise.all([
+        // Load routes, network, AND schedules in parallel — schedules are critical for routing
+        const [routesRes, networkRes, schedulesRes] = await Promise.all([
           fetch(DATA_URLS.routes),
           fetch(DATA_URLS.network),
+          fetch(DATA_URLS.schedules),
         ]);
 
         if (!routesRes.ok || !networkRes.ok) {
@@ -54,8 +57,16 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         setNetwork(networkData);
         setRouteColors(assignRouteColors(routesData));
         setLastUpdated(new Date().toISOString());
+
+        // Parse schedules
+        if (schedulesRes.ok) {
+          const schedulesData = await schedulesRes.json();
+          setSchedules(schedulesData);
+        }
+        setSchedulesLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load transit data');
+        setSchedulesLoading(false);
       } finally {
         setLoading(false);
       }
@@ -63,25 +74,6 @@ export function TransitProvider({ children }: { children: ReactNode }) {
 
     loadData();
   }, []);
-
-  // Lazy-load schedules when needed
-  useEffect(() => {
-    if (Object.keys(schedules).length > 0) return;
-    // Load schedules in background after initial render
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(DATA_URLS.schedules);
-        if (res.ok) {
-          const data = await res.json();
-          setSchedules(data);
-        }
-      } catch {
-        // Schedules are non-critical for initial render
-        console.warn('Failed to load schedules');
-      }
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [schedules]);
 
   return (
     <TransitContext.Provider
@@ -91,6 +83,7 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         schedules,
         routeColors,
         loading,
+        schedulesLoading,
         error,
         selectedRoute,
         setSelectedRoute,

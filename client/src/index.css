@@ -250,3 +250,65 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* Full-screen mobile fixes */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent iOS bounce scroll */
+body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* Ensure map fills viewport */
+.gm-style {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* Google Maps InfoWindow dark theme */
+.gm-style .gm-style-iw-c {
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+.gm-style .gm-style-iw-d {
+  overflow: visible !important;
+  max-height: none !important;
+}
+.gm-style .gm-style-iw-tc {
+  display: none !important;
+}
+.gm-style .gm-style-iw button[aria-label="Close"] {
+  display: none !important;
+}
+.gm-style .gm-style-iw-chr {
+  display: none !important;
+}
+
+/* Mobile horizontal scroll prevention */
+@media (max-width: 767px) {
+  html, body, #root {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  
+  /* Ensure panels don't overflow */
+  .glass-panel {
+    max-width: 100vw;
+  }
+}

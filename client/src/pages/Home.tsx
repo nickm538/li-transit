@@ -2,6 +2,7 @@
  * Home — Explore page with full Long Island map + all bus route overlays
  * Design: Transit Control Room — dark, full-bleed map, glass panels
  * Map: Google Maps with all 69 routes overlaid with unique colors
+ * Stop markers: Click shows info box with stop name, click again or X to dismiss
  * Mobile: Bottom sheet for route list, responsive panels
  */
 import { useRef, useCallback, useEffect, useState } from 'react';
@@ -19,6 +20,7 @@ export default function Home() {
   const mapRef = useRef<google.maps.Map | null>(null);
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const { routes, routeColors, loading, selectedRoute, setSelectedRoute } = useTransit();
   const [mapReady, setMapReady] = useState(false);
 
@@ -37,6 +39,10 @@ export default function Home() {
         strictBounds: false,
       },
     });
+
+    // Create a single reusable InfoWindow for stop popups
+    infoWindowRef.current = new google.maps.InfoWindow();
+
     setMapReady(true);
   }, []);
 
@@ -104,12 +110,18 @@ export default function Home() {
     });
   }, [mapReady, routes, routeColors, selectedRoute, setSelectedRoute]);
 
-  // Show stop markers when a route is selected
+  // Show stop markers when a route is selected — with info box on click
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
 
+    // Clear existing markers
     markersRef.current.forEach(m => (m.map = null));
     markersRef.current = [];
+
+    // Close any open info window
+    if (infoWindowRef.current) {
+      infoWindowRef.current.close();
+    }
 
     if (!selectedRoute) return;
 
@@ -117,20 +129,89 @@ export default function Home() {
 
     selectedRoute.stops.forEach((stop, i) => {
       const el = document.createElement('div');
-      el.style.width = '12px';
-      el.style.height = '12px';
+      el.style.width = '14px';
+      el.style.height = '14px';
       el.style.borderRadius = '50%';
       el.style.backgroundColor = '#0D1117';
-      el.style.border = `2px solid ${color}`;
-      el.style.boxShadow = `0 0 6px ${color}80`;
+      el.style.border = `2.5px solid ${color}`;
+      el.style.boxShadow = `0 0 8px ${color}80`;
       el.style.cursor = 'pointer';
+      el.style.transition = 'transform 0.15s ease';
       el.title = `${stop.name} (Stop #${i + 1})`;
+
+      // Hover effect
+      el.addEventListener('mouseenter', () => {
+        el.style.transform = 'scale(1.4)';
+        el.style.backgroundColor = color;
+      });
+      el.addEventListener('mouseleave', () => {
+        el.style.transform = 'scale(1)';
+        el.style.backgroundColor = '#0D1117';
+      });
 
       const marker = new google.maps.marker.AdvancedMarkerElement({
         map: mapRef.current!,
         position: { lat: stop.lat, lng: stop.lon },
         content: el,
         title: stop.name,
+      });
+
+      // Click handler — show info box, do NOT close the route
+      marker.addListener('click', (e: any) => {
+        // Prevent click from propagating to map (which would deselect route)
+        if (e && e.stop) e.stop();
+
+        if (infoWindowRef.current && mapRef.current) {
+          const infoContent = `
+            <div style="
+              font-family: 'JetBrains Mono', monospace;
+              background: #161B22;
+              color: #E6EDF3;
+              padding: 10px 14px;
+              border-radius: 8px;
+              border: 1px solid ${color}40;
+              min-width: 180px;
+              box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            ">
+              <div style="
+                font-size: 13px;
+                font-weight: 700;
+                color: ${color};
+                margin-bottom: 4px;
+              ">
+                Stop #${i + 1}
+              </div>
+              <div style="
+                font-size: 12px;
+                color: #E6EDF3;
+                margin-bottom: 6px;
+                line-height: 1.3;
+              ">
+                ${stop.name}
+              </div>
+              <div style="
+                font-size: 10px;
+                color: #8B949E;
+              ">
+                ${stop.lat.toFixed(5)}, ${stop.lon.toFixed(5)}
+              </div>
+              <div style="
+                font-size: 10px;
+                color: ${color};
+                margin-top: 4px;
+                opacity: 0.8;
+              ">
+                Route ${selectedRoute.short_name} &middot; ${selectedRoute.county}
+              </div>
+            </div>
+          `;
+
+          infoWindowRef.current.setContent(infoContent);
+          infoWindowRef.current.open({
+            map: mapRef.current,
+            anchor: marker,
+          });
+        }
       });
 
       markersRef.current.push(marker);

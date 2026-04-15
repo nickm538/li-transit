@@ -16,7 +16,6 @@ export const LI_BOUNDS = {
 };
 
 // Color palettes for routes
-// Suffolk: blues/cyans, Nassau: ambers/oranges
 export const SUFFOLK_COLORS = [
   '#00D4FF', '#00B4E6', '#0099CC', '#0080B3', '#006699',
   '#00E5CC', '#00CCA3', '#00B38F', '#009980', '#008066',
@@ -94,9 +93,29 @@ export function assignRouteColors(routes: TransitRoute[]): Map<string, string> {
   return colorMap;
 }
 
-// Get day type for schedule lookup
-export function getDayType(): 'weekday' | 'saturday' | 'sunday' {
-  const day = new Date().getDay();
+// Known US federal holidays that may affect transit (Sunday schedule typically)
+const KNOWN_HOLIDAYS_2026: string[] = [
+  '2026-01-01', // New Year's Day
+  '2026-01-19', // MLK Day
+  '2026-02-16', // Presidents' Day
+  '2026-05-25', // Memorial Day
+  '2026-07-04', // Independence Day (observed)
+  '2026-09-07', // Labor Day
+  '2026-11-26', // Thanksgiving
+  '2026-12-25', // Christmas
+];
+
+// Get day type for schedule lookup — with holiday awareness
+export function getDayType(date?: Date): 'weekday' | 'saturday' | 'sunday' {
+  const d = date || new Date();
+  const dateStr = d.toISOString().split('T')[0];
+
+  // Check if it's a holiday — most transit systems run Sunday schedule
+  if (KNOWN_HOLIDAYS_2026.includes(dateStr)) {
+    return 'sunday';
+  }
+
+  const day = d.getDay();
   if (day === 0) return 'sunday';
   if (day === 6) return 'saturday';
   return 'weekday';
@@ -119,7 +138,7 @@ export function formatTime(timeStr: string): string {
   return `${h12}:${minutes.toString().padStart(2, '0')} ${ampm}`;
 }
 
-// Calculate distance between two points (haversine)
+// Calculate distance between two points (haversine) in miles
 export function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 3959; // miles
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -148,4 +167,96 @@ export function findNearestStop(
   }
 
   return nearest ? { stop: nearest, distance: minDist } : null;
+}
+
+// Find N nearest stops within a radius
+export function findNearestStops(
+  lat: number,
+  lon: number,
+  stops: TransitStop[],
+  maxCount: number = 10,
+  maxRadius: number = 3 // miles
+): { stop: TransitStop; distance: number }[] {
+  const candidates: { stop: TransitStop; distance: number }[] = [];
+
+  for (const stop of stops) {
+    const d = haversine(lat, lon, stop.lat, stop.lon);
+    if (d <= maxRadius) {
+      candidates.push({ stop, distance: d });
+    }
+  }
+
+  candidates.sort((a, b) => a.distance - b.distance);
+  return candidates.slice(0, maxCount);
+}
+
+// Find all routes that serve a given stop
+export function findRoutesForStop(
+  stopId: string,
+  routes: TransitRoute[]
+): TransitRoute[] {
+  return routes.filter(r => r.stops.some(s => s.id === stopId));
+}
+
+// Find the closest stop on a specific route to a given point
+export function findClosestStopOnRoute(
+  lat: number,
+  lon: number,
+  route: TransitRoute
+): { stop: TransitStop; index: number; distance: number } | null {
+  let best: TransitStop | null = null;
+  let bestIdx = -1;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < route.stops.length; i++) {
+    const s = route.stops[i];
+    const d = haversine(lat, lon, s.lat, s.lon);
+    if (d < bestDist) {
+      bestDist = d;
+      best = s;
+      bestIdx = i;
+    }
+  }
+
+  return best ? { stop: best, index: bestIdx, distance: bestDist } : null;
+}
+
+// Estimate walking time in minutes (average 3 mph walking speed)
+export function estimateWalkTime(distanceMiles: number): number {
+  return Math.round(distanceMiles * 20); // 20 min per mile = 3 mph
+}
+
+// Estimate biking time in minutes (average 10 mph)
+export function estimateBikeTime(distanceMiles: number): number {
+  return Math.round(distanceMiles * 6); // 6 min per mile = 10 mph
+}
+
+// Check if a distance is walkable (under 1.5 miles ~ 30 min walk)
+export function isWalkable(distanceMiles: number): boolean {
+  return distanceMiles <= 1.5;
+}
+
+// Check if a distance is bikeable (under 5 miles ~ 30 min bike)
+export function isBikeable(distanceMiles: number): boolean {
+  return distanceMiles <= 5;
+}
+
+// Get current time as minutes since midnight
+export function getCurrentMinutes(): number {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+// Format minutes as human-readable duration
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+// Format distance
+export function formatDistance(miles: number): string {
+  if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
+  return `${miles.toFixed(1)} mi`;
 }

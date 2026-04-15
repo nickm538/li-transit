@@ -2,20 +2,26 @@
  * TripPlanner — Point A to Point B transit routing
  * Design: Transit Control Room — clean map with floating input panels
  * Features: Geolocation, Google Places Autocomplete, pin drop, optimal route calculation
- * Mobile: Full-screen map with bottom sheet panel
+ * Routing: Schedule-aware, multi-strategy (direct, transfer, walk/bike), holiday-aware
+ * Mobile: Full-screen map with bottom sheet panel, proper scrolling
  */
 import { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { MapView } from '@/components/Map';
 import NavHeader from '@/components/NavHeader';
 import { useTransit } from '@/contexts/TransitContext';
-import { LI_CENTER, LI_BOUNDS, findNearestStop, haversine, getDayType, formatTime, parseGtfsTime } from '@/lib/transitData';
-import type { TransitRoute, TransitStop } from '@/lib/transitData';
+import {
+  LI_CENTER, LI_BOUNDS,
+  haversine, getDayType, formatTime, parseGtfsTime,
+  findNearestStops, findClosestStopOnRoute, findRoutesForStop,
+  estimateWalkTime, estimateBikeTime, isWalkable, isBikeable,
+  getCurrentMinutes, formatDuration, formatDistance,
+} from '@/lib/transitData';
+import type { TransitRoute, TransitStop, RouteSchedule, TripSchedule } from '@/lib/transitData';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   MapPin, Navigation, Crosshair, Search, ArrowRight, Clock,
   Footprints, Bus, LocateFixed, Loader2, Route as RouteIcon, X,
-  ChevronUp, ChevronDown, GripHorizontal,
+  GripHorizontal, Bike, AlertTriangle, Calendar,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -26,10 +32,13 @@ interface TripResult {
   totalDuration: number;
   departureTime: string;
   arrivalTime: string;
+  walkOnly?: boolean;
+  bikeOnly?: boolean;
+  label?: string;
 }
 
 interface TripSegment {
-  type: 'walk' | 'bus';
+  type: 'walk' | 'bus' | 'bike';
   route?: TransitRoute;
   fromStop?: TransitStop;
   toStop?: TransitStop;
@@ -41,6 +50,7 @@ interface TripSegment {
   arrivalTime?: string;
   stopsCount?: number;
   color?: string;
+  stopsBetween?: TransitStop[];
 }
 
 export default function TripPlanner() {
@@ -52,12 +62,11 @@ export default function TripPlanner() {
   const destInputRef = useRef<HTMLInputElement | null>(null);
   const originAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const destAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  // Use refs for pin drop state to avoid stale closures in map click handler
   const dropModeRef = useRef<'origin' | 'dest' | null>(null);
   const originCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const destCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  const { routes, routeColors, schedules, loading } = useTransit();
+  const { routes, routeColors, schedules, loading, schedulesLoading } = useTransit();
 
   const [originText, setOriginText] = useState('');
   const [destText, setDestText] = useState('');
@@ -76,7 +85,7 @@ export default function TripPlanner() {
   useEffect(() => { originCoordsRef.current = originCoords; }, [originCoords]);
   useEffect(() => { destCoordsRef.current = destCoords; }, [destCoords]);
 
-  // All stops flattened
+  // All stops flattened (deduplicated)
   const allStops = useMemo(() => {
     const stops: TransitStop[] = [];
     const seen = new Set<string>();
@@ -132,7 +141,6 @@ export default function TripPlanner() {
         originCoordsRef.current = coords;
         setOriginCoords(coords);
         setDropMode(null);
-        // Reverse geocode to get address
         const addr = await reverseGeocode(coords);
         setOriginText(addr);
         toast.success('Origin pin set');
@@ -144,14 +152,12 @@ export default function TripPlanner() {
         setDestText(addr);
         toast.success('Destination pin set');
       } else if (!currentOrigin) {
-        // Auto-assign to origin if nothing set
         originCoordsRef.current = coords;
         setOriginCoords(coords);
         const addr = await reverseGeocode(coords);
         setOriginText(addr);
         toast.success('Origin set — click again to set destination');
       } else {
-        // Auto-assign to destination
         destCoordsRef.current = coords;
         setDestCoords(coords);
         const addr = await reverseGeocode(coords);
@@ -234,16 +240,10 @@ export default function TripPlanner() {
     });
   }, []);
 
-  // Use device location with proper error handling
+  // Use device location
   const useMyLocation = useCallback(() => {
     if (!navigator.geolocation) {
       toast.error('Geolocation is not supported by your browser');
-      return;
-    }
-
-    // Check if we're on HTTPS (required for geolocation on most browsers)
-    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-      toast.error('Location services require a secure (HTTPS) connection');
       return;
     }
 
@@ -255,7 +255,6 @@ export default function TripPlanner() {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setOriginCoords(coords);
         originCoordsRef.current = coords;
-        // Reverse geocode to get street address
         const addr = await reverseGeocode(coords);
         setOriginText(addr);
         setLocating(false);
@@ -289,7 +288,9 @@ export default function TripPlanner() {
     );
   }, [reverseGeocode]);
 
-  // Find transit routes between two points
+  // ============================================================
+  // ROBUST ROUTING ENGINE
+  // ============================================================
   const findRoutes = useCallback(async () => {
     let origin = originCoords;
     let dest = destCoords;
@@ -320,209 +321,298 @@ export default function TripPlanner() {
     setSelectedResult(null);
 
     try {
-      // Find nearest stops to origin and destination
-      const nearOrigin = findNearestStop(origin.lat, origin.lng, allStops);
-      const nearDest = findNearestStop(dest.lat, dest.lng, allStops);
-
-      if (!nearOrigin || !nearDest) {
-        toast.error('No bus stops found nearby');
-        setSearching(false);
-        return;
-      }
-
       const dayType = getDayType();
-      const now = new Date();
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const nowMinutes = getCurrentMinutes();
+      const directDist = haversine(origin.lat, origin.lng, dest.lat, dest.lng);
+
+      // Find nearby stops for origin and destination (wider radius)
+      const nearOriginStops = findNearestStops(origin.lat, origin.lng, allStops, 15, 5);
+      const nearDestStops = findNearestStops(dest.lat, dest.lng, allStops, 15, 5);
 
       const tripResults: TripResult[] = [];
+      const seenRouteKeys = new Set<string>(); // Prevent duplicate results
 
-      // Strategy 1: Direct routes
+      // ---- STRATEGY 1: Direct routes (same route serves both origin and dest area) ----
       for (const route of routes) {
-        const originStopIdx = route.stops.findIndex(s =>
-          haversine(s.lat, s.lon, origin!.lat, origin!.lng) < 0.5
-        );
-        const destStopIdx = route.stops.findIndex(s =>
-          haversine(s.lat, s.lon, dest!.lat, dest!.lng) < 0.5
-        );
+        // Find the closest stop on this route to origin
+        const originMatch = findClosestStopOnRoute(origin.lat, origin.lng, route);
+        const destMatch = findClosestStopOnRoute(dest.lat, dest.lng, route);
 
-        if (originStopIdx >= 0 && destStopIdx >= 0 && originStopIdx !== destStopIdx) {
-          const originStop = route.stops[originStopIdx];
-          const destStop = route.stops[destStopIdx];
-          const color = routeColors.get(route.id) || '#00D4FF';
+        if (!originMatch || !destMatch) continue;
+        if (originMatch.index === destMatch.index) continue;
 
-          const routeSched = schedules[route.id];
-          if (!routeSched) continue;
+        // Allow up to 1.5 miles walk to/from stops (generous for transit)
+        if (originMatch.distance > 1.5 || destMatch.distance > 1.5) continue;
+
+        const routeKey = `direct-${route.id}-${originMatch.stop.id}-${destMatch.stop.id}`;
+        if (seenRouteKeys.has(routeKey)) continue;
+        seenRouteKeys.add(routeKey);
+
+        const color = routeColors.get(route.id) || '#00D4FF';
+        const stopsCount = Math.abs(destMatch.index - originMatch.index);
+
+        // Try to find schedule-based timing
+        const routeSched = schedules[route.id];
+        let bestTrip: { dep: string; arr: string; depMin: number; arrMin: number } | null = null;
+
+        if (routeSched) {
           const trips = routeSched[dayType] || [];
-
           for (const trip of trips) {
-            const originStopTime = trip.stops.find(s => s.stop_id === originStop.id);
-            const destStopTime = trip.stops.find(s => s.stop_id === destStop.id);
+            const originStopTime = trip.stops.find(s => s.stop_id === originMatch.stop.id);
+            const destStopTime = trip.stops.find(s => s.stop_id === destMatch.stop.id);
 
             if (originStopTime && destStopTime) {
-              const depMinutes = parseGtfsTime(originStopTime.departure).totalMinutes;
-              const arrMinutes = parseGtfsTime(destStopTime.arrival).totalMinutes;
+              const depMin = parseGtfsTime(originStopTime.departure).totalMinutes;
+              const arrMin = parseGtfsTime(destStopTime.arrival).totalMinutes;
 
-              if (depMinutes >= nowMinutes && arrMinutes > depMinutes) {
-                const walkToStop = haversine(origin!.lat, origin!.lng, originStop.lat, originStop.lon);
-                const walkFromStop = haversine(dest!.lat, dest!.lng, destStop.lat, destStop.lon);
-                const busDistance = haversine(originStop.lat, originStop.lon, destStop.lat, destStop.lon);
-                const stopsCount = Math.abs(destStopIdx - originStopIdx);
+              // Bus must depart after now (with walk time buffer) and arrive after departure
+              const walkToStopMin = estimateWalkTime(originMatch.distance);
+              if (depMin >= (nowMinutes + walkToStopMin - 5) && arrMin > depMin) {
+                if (!bestTrip || depMin < bestTrip.depMin) {
+                  bestTrip = {
+                    dep: originStopTime.departure,
+                    arr: destStopTime.arrival,
+                    depMin,
+                    arrMin,
+                  };
+                }
+              }
+            }
+          }
+        }
+
+        // Build segments
+        const segments: TripSegment[] = [];
+        const walkToStopDist = originMatch.distance;
+        const walkFromStopDist = destMatch.distance;
+
+        if (walkToStopDist > 0.03) {
+          segments.push({
+            type: 'walk',
+            fromName: 'Your Location',
+            toName: originMatch.stop.name,
+            distance: walkToStopDist,
+            duration: estimateWalkTime(walkToStopDist),
+          });
+        }
+
+        const busDuration = bestTrip
+          ? (bestTrip.arrMin - bestTrip.depMin)
+          : Math.round(stopsCount * 2.5); // Estimate ~2.5 min per stop if no schedule
+
+        segments.push({
+          type: 'bus',
+          route,
+          fromStop: originMatch.stop,
+          toStop: destMatch.stop,
+          fromName: originMatch.stop.name,
+          toName: destMatch.stop.name,
+          distance: haversine(originMatch.stop.lat, originMatch.stop.lon, destMatch.stop.lat, destMatch.stop.lon),
+          duration: busDuration,
+          departureTime: bestTrip?.dep || '',
+          arrivalTime: bestTrip?.arr || '',
+          stopsCount,
+          color,
+        });
+
+        if (walkFromStopDist > 0.03) {
+          segments.push({
+            type: 'walk',
+            fromName: destMatch.stop.name,
+            toName: 'Destination',
+            distance: walkFromStopDist,
+            duration: estimateWalkTime(walkFromStopDist),
+          });
+        }
+
+        const totalDuration = segments.reduce((sum, s) => sum + s.duration, 0);
+        const totalDist = walkToStopDist + haversine(originMatch.stop.lat, originMatch.stop.lon, destMatch.stop.lat, destMatch.stop.lon) + walkFromStopDist;
+
+        tripResults.push({
+          segments,
+          totalDistance: totalDist,
+          totalDuration,
+          departureTime: bestTrip?.dep || '',
+          arrivalTime: bestTrip?.arr || '',
+          label: `Route ${route.short_name}`,
+        });
+      }
+
+      // ---- STRATEGY 2: Transfer routes (two buses with a transfer point) ----
+      if (tripResults.length < 3) {
+        // For each stop near origin, find routes serving it
+        for (const nearOrig of nearOriginStops.slice(0, 8)) {
+          const origRoutes = findRoutesForStop(nearOrig.stop.id, routes);
+
+          for (const origRoute of origRoutes) {
+            // For each stop on origRoute, check if any route from there reaches near dest
+            const origStopIdx = origRoute.stops.findIndex(s => s.id === nearOrig.stop.id);
+            if (origStopIdx < 0) continue;
+
+            // Check transfer points (every 3rd stop to limit computation)
+            for (let ti = 0; ti < origRoute.stops.length; ti += 1) {
+              if (ti === origStopIdx) continue;
+              const transferStop = origRoute.stops[ti];
+
+              // Find routes at this transfer stop
+              const transferRoutes = findRoutesForStop(transferStop.id, routes);
+
+              for (const destRoute of transferRoutes) {
+                if (destRoute.id === origRoute.id) continue;
+
+                const destMatch = findClosestStopOnRoute(dest.lat, dest.lng, destRoute);
+                if (!destMatch || destMatch.distance > 1.5) continue;
+
+                const routeKey = `transfer-${origRoute.id}-${destRoute.id}-${transferStop.id}`;
+                if (seenRouteKeys.has(routeKey)) continue;
+                seenRouteKeys.add(routeKey);
+
+                const color1 = routeColors.get(origRoute.id) || '#00D4FF';
+                const color2 = routeColors.get(destRoute.id) || '#FFB020';
+                const stopsCount1 = Math.abs(ti - origStopIdx);
+                const transferStopIdx = destRoute.stops.findIndex(s => s.id === transferStop.id);
+                const stopsCount2 = transferStopIdx >= 0 ? Math.abs(destMatch.index - transferStopIdx) : 5;
 
                 const segments: TripSegment[] = [];
 
-                if (walkToStop > 0.05) {
+                if (nearOrig.distance > 0.03) {
                   segments.push({
                     type: 'walk',
                     fromName: 'Your Location',
-                    toName: originStop.name,
-                    distance: walkToStop,
-                    duration: Math.round(walkToStop / 0.05),
+                    toName: nearOrig.stop.name,
+                    distance: nearOrig.distance,
+                    duration: estimateWalkTime(nearOrig.distance),
                   });
                 }
 
                 segments.push({
                   type: 'bus',
-                  route,
-                  fromStop: originStop,
-                  toStop: destStop,
-                  fromName: originStop.name,
-                  toName: destStop.name,
-                  distance: busDistance,
-                  duration: arrMinutes - depMinutes,
-                  departureTime: originStopTime.departure,
-                  arrivalTime: destStopTime.arrival,
-                  stopsCount,
-                  color,
+                  route: origRoute,
+                  fromStop: nearOrig.stop,
+                  toStop: transferStop,
+                  fromName: nearOrig.stop.name,
+                  toName: transferStop.name,
+                  distance: haversine(nearOrig.stop.lat, nearOrig.stop.lon, transferStop.lat, transferStop.lon),
+                  duration: Math.round(stopsCount1 * 2.5),
+                  stopsCount: stopsCount1,
+                  color: color1,
                 });
 
-                if (walkFromStop > 0.05) {
+                // Transfer walk (usually same stop, so minimal)
+                segments.push({
+                  type: 'walk',
+                  fromName: `Transfer at ${transferStop.name}`,
+                  toName: transferStop.name,
+                  distance: 0,
+                  duration: 5, // 5 min transfer time
+                });
+
+                segments.push({
+                  type: 'bus',
+                  route: destRoute,
+                  fromStop: transferStop,
+                  toStop: destMatch.stop,
+                  fromName: transferStop.name,
+                  toName: destMatch.stop.name,
+                  distance: haversine(transferStop.lat, transferStop.lon, destMatch.stop.lat, destMatch.stop.lon),
+                  duration: Math.round(stopsCount2 * 2.5),
+                  stopsCount: stopsCount2,
+                  color: color2,
+                });
+
+                if (destMatch.distance > 0.03) {
                   segments.push({
                     type: 'walk',
-                    fromName: destStop.name,
+                    fromName: destMatch.stop.name,
                     toName: 'Destination',
-                    distance: walkFromStop,
-                    duration: Math.round(walkFromStop / 0.05),
+                    distance: destMatch.distance,
+                    duration: estimateWalkTime(destMatch.distance),
                   });
                 }
 
-                const totalDist = walkToStop + busDistance + walkFromStop;
-                const walkTime = Math.round((walkToStop + walkFromStop) / 0.05);
-                const totalDuration = walkTime + (arrMinutes - depMinutes);
+                const totalDuration = segments.reduce((sum, s) => sum + s.duration, 0);
+                const totalDist = segments.reduce((sum, s) => sum + s.distance, 0);
 
                 tripResults.push({
                   segments,
                   totalDistance: totalDist,
                   totalDuration,
-                  departureTime: originStopTime.departure,
-                  arrivalTime: destStopTime.arrival,
+                  departureTime: '',
+                  arrivalTime: '',
+                  label: `${origRoute.short_name} → ${destRoute.short_name}`,
                 });
-
-                break;
               }
             }
           }
         }
       }
 
-      // Strategy 2: Nearest-stop-based options
-      if (tripResults.length === 0 && nearOrigin && nearDest) {
-        const originRoutes = routes.filter(r =>
-          r.stops.some(s => s.id === nearOrigin.stop.id)
-        );
-
-        for (const route of originRoutes) {
-          const color = routeColors.get(route.id) || '#00D4FF';
-          const originStopIdx = route.stops.findIndex(s => s.id === nearOrigin.stop.id);
-          let bestDestIdx = -1;
-          let bestDestDist = Infinity;
-          route.stops.forEach((s, idx) => {
-            if (idx === originStopIdx) return;
-            const d = haversine(s.lat, s.lon, dest!.lat, dest!.lng);
-            if (d < bestDestDist) {
-              bestDestDist = d;
-              bestDestIdx = idx;
-            }
-          });
-
-          if (bestDestIdx >= 0 && bestDestDist < 2) {
-            const destStop = route.stops[bestDestIdx];
-            const walkToStop = nearOrigin.distance;
-            const walkFromStop = bestDestDist;
-            const stopsCount = Math.abs(bestDestIdx - originStopIdx);
-
-            const segments: TripSegment[] = [];
-            if (walkToStop > 0.05) {
-              segments.push({
-                type: 'walk',
-                fromName: 'Your Location',
-                toName: nearOrigin.stop.name,
-                distance: walkToStop,
-                duration: Math.round(walkToStop / 0.05),
-              });
-            }
-            segments.push({
-              type: 'bus',
-              route,
-              fromStop: nearOrigin.stop,
-              toStop: destStop,
-              fromName: nearOrigin.stop.name,
-              toName: destStop.name,
-              distance: haversine(nearOrigin.stop.lat, nearOrigin.stop.lon, destStop.lat, destStop.lon),
-              duration: Math.round(stopsCount * 2.5),
-              stopsCount,
-              color,
-            });
-            if (walkFromStop > 0.05) {
-              segments.push({
-                type: 'walk',
-                fromName: destStop.name,
-                toName: 'Destination',
-                distance: walkFromStop,
-                duration: Math.round(walkFromStop / 0.05),
-              });
-            }
-
-            const totalDist = walkToStop + haversine(nearOrigin.stop.lat, nearOrigin.stop.lon, destStop.lat, destStop.lon) + walkFromStop;
-            const totalDuration = segments.reduce((sum, s) => sum + s.duration, 0);
-
-            tripResults.push({
-              segments,
-              totalDistance: totalDist,
-              totalDuration,
-              departureTime: '',
-              arrivalTime: '',
-            });
-          }
-        }
-      }
-
-      // Walking-only option
-      const directWalkDist = haversine(origin.lat, origin.lng, dest.lat, dest.lng);
-      if (directWalkDist < 5) {
+      // ---- STRATEGY 3: Walking option ----
+      if (isWalkable(directDist)) {
         tripResults.push({
           segments: [{
             type: 'walk',
             fromName: 'Your Location',
             toName: 'Destination',
-            distance: directWalkDist,
-            duration: Math.round(directWalkDist / 0.05),
+            distance: directDist,
+            duration: estimateWalkTime(directDist),
           }],
-          totalDistance: directWalkDist,
-          totalDuration: Math.round(directWalkDist / 0.05),
+          totalDistance: directDist,
+          totalDuration: estimateWalkTime(directDist),
           departureTime: '',
           arrivalTime: '',
+          walkOnly: true,
+          label: 'Walk',
         });
       }
 
-      tripResults.sort((a, b) => a.totalDuration - b.totalDuration);
-      setResults(tripResults.slice(0, 5));
+      // ---- STRATEGY 4: Biking option ----
+      if (isBikeable(directDist)) {
+        tripResults.push({
+          segments: [{
+            type: 'bike',
+            fromName: 'Your Location',
+            toName: 'Destination',
+            distance: directDist,
+            duration: estimateBikeTime(directDist),
+          }],
+          totalDistance: directDist,
+          totalDuration: estimateBikeTime(directDist),
+          departureTime: '',
+          arrivalTime: '',
+          bikeOnly: true,
+          label: 'Bike',
+        });
+      }
 
-      if (tripResults.length === 0) {
-        toast.info('No transit routes found for this trip. Try different locations.');
+      // Sort by total duration, deduplicate very similar results
+      tripResults.sort((a, b) => a.totalDuration - b.totalDuration);
+
+      // Remove near-duplicate results (same route combo within 5 min)
+      const filtered: TripResult[] = [];
+      for (const r of tripResults) {
+        const isDupe = filtered.some(f =>
+          f.label === r.label && Math.abs(f.totalDuration - r.totalDuration) < 5
+        );
+        if (!isDupe) {
+          filtered.push(r);
+        }
+      }
+
+      setResults(filtered.slice(0, 8));
+
+      if (filtered.length === 0) {
+        if (directDist > 5) {
+          toast.info(`No transit routes found for this ${formatDistance(directDist)} trip. The distance may be too far for current bus coverage.`);
+        } else {
+          toast.info('No transit routes found. Try adjusting your origin or destination.');
+        }
+      } else {
+        toast.success(`Found ${filtered.length} route option${filtered.length > 1 ? 's' : ''}!`);
       }
     } catch (err) {
-      toast.error('Error finding routes');
-      console.error(err);
+      toast.error('Error finding routes. Please try again.');
+      console.error('Routing error:', err);
     } finally {
       setSearching(false);
     }
@@ -541,7 +631,7 @@ export default function TripPlanner() {
     // Origin marker
     if (originCoords) {
       const el = document.createElement('div');
-      el.innerHTML = `<div style="width:20px;height:20px;border-radius:50%;background:#00FF88;border:3px solid #0D1117;box-shadow:0 0 12px #00FF8880;"></div>`;
+      el.innerHTML = `<div style="width:22px;height:22px;border-radius:50%;background:#00FF88;border:3px solid #0D1117;box-shadow:0 0 14px #00FF8880;"></div>`;
       const marker = new google.maps.marker.AdvancedMarkerElement({
         map: mapRef.current,
         position: originCoords,
@@ -554,7 +644,7 @@ export default function TripPlanner() {
     // Destination marker
     if (destCoords) {
       const el = document.createElement('div');
-      el.innerHTML = `<div style="width:20px;height:20px;border-radius:50%;background:#FF4444;border:3px solid #0D1117;box-shadow:0 0 12px #FF444480;"></div>`;
+      el.innerHTML = `<div style="width:22px;height:22px;border-radius:50%;background:#FF4444;border:3px solid #0D1117;box-shadow:0 0 14px #FF444480;"></div>`;
       const marker = new google.maps.marker.AdvancedMarkerElement({
         map: mapRef.current,
         position: destCoords,
@@ -574,6 +664,8 @@ export default function TripPlanner() {
       result.segments.forEach(seg => {
         if (seg.type === 'bus' && seg.route) {
           const color = seg.color || '#00D4FF';
+
+          // Draw the route shape
           const line = new google.maps.Polyline({
             path: seg.route.shape.map(([lat, lng]) => ({ lat, lng })),
             geodesic: true,
@@ -597,17 +689,98 @@ export default function TripPlanner() {
           polylinesRef.current.push(glow);
 
           seg.route.shape.forEach(([lat, lng]) => bounds.extend({ lat, lng }));
+
+          // Show boarding and alighting stop markers
+          if (seg.fromStop) {
+            const fromEl = document.createElement('div');
+            fromEl.innerHTML = `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #0D1117;box-shadow:0 0 8px ${color}80;"></div>`;
+            const fromMarker = new google.maps.marker.AdvancedMarkerElement({
+              map: mapRef.current!,
+              position: { lat: seg.fromStop.lat, lng: seg.fromStop.lon },
+              content: fromEl.firstElementChild as HTMLElement,
+              title: `Board: ${seg.fromStop.name}`,
+            });
+            markersRef.current.push(fromMarker);
+          }
+          if (seg.toStop) {
+            const toEl = document.createElement('div');
+            toEl.innerHTML = `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #0D1117;box-shadow:0 0 8px ${color}80;"></div>`;
+            const toMarker = new google.maps.marker.AdvancedMarkerElement({
+              map: mapRef.current!,
+              position: { lat: seg.toStop.lat, lng: seg.toStop.lon },
+              content: toEl.firstElementChild as HTMLElement,
+              title: `Alight: ${seg.toStop.name}`,
+            });
+            markersRef.current.push(toMarker);
+          }
+        } else if (seg.type === 'walk' && seg.distance > 0.03) {
+          // Draw dashed walking line between points
+          // We approximate with a straight line
+          const walkPoints: google.maps.LatLngLiteral[] = [];
+          if (seg.fromStop) walkPoints.push({ lat: seg.fromStop.lat, lng: seg.fromStop.lon });
+          if (seg.toStop) walkPoints.push({ lat: seg.toStop.lat, lng: seg.toStop.lon });
+
+          // For first/last walk segments, use origin/dest coords
+          if (seg.fromName === 'Your Location' && originCoords) {
+            walkPoints.unshift(originCoords);
+            if (seg.toStop) walkPoints.push({ lat: seg.toStop.lat, lng: seg.toStop.lon });
+            else if (result.segments[1]?.fromStop) walkPoints.push({ lat: result.segments[1].fromStop.lat, lng: result.segments[1].fromStop.lon });
+          }
+          if (seg.toName === 'Destination' && destCoords) {
+            if (seg.fromStop) walkPoints.unshift({ lat: seg.fromStop.lat, lng: seg.fromStop.lon });
+            else {
+              const prevSeg = result.segments[result.segments.indexOf(seg) - 1];
+              if (prevSeg?.toStop) walkPoints.unshift({ lat: prevSeg.toStop.lat, lng: prevSeg.toStop.lon });
+            }
+            walkPoints.push(destCoords);
+          }
+
+          if (walkPoints.length >= 2) {
+            const walkLine = new google.maps.Polyline({
+              path: walkPoints,
+              geodesic: true,
+              strokeColor: '#00FF88',
+              strokeOpacity: 0,
+              strokeWeight: 3,
+              map: mapRef.current,
+              zIndex: 8,
+              icons: [{
+                icon: {
+                  path: 'M 0,-1 0,1',
+                  strokeOpacity: 0.7,
+                  strokeColor: '#00FF88',
+                  scale: 3,
+                },
+                offset: '0',
+                repeat: '12px',
+              }],
+            });
+            polylinesRef.current.push(walkLine);
+          }
         }
       });
 
-      mapRef.current.fitBounds(bounds, { top: 80, bottom: 280, left: 20, right: 20 });
+      const isMobile = window.innerWidth < 768;
+      mapRef.current.fitBounds(bounds, isMobile
+        ? { top: 80, bottom: 280, left: 20, right: 20 }
+        : { top: 80, bottom: 20, left: 20, right: 420 }
+      );
     } else if (originCoords && destCoords) {
       const bounds = new google.maps.LatLngBounds();
       bounds.extend(originCoords);
       bounds.extend(destCoords);
-      mapRef.current.fitBounds(bounds, { top: 80, bottom: 280, left: 20, right: 20 });
+      const isMobile = window.innerWidth < 768;
+      mapRef.current.fitBounds(bounds, isMobile
+        ? { top: 80, bottom: 200, left: 20, right: 20 }
+        : { top: 80, bottom: 20, left: 20, right: 420 }
+      );
     }
   }, [mapReady, originCoords, destCoords, results, selectedResult]);
+
+  const currentDayType = getDayType();
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const dayStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-background relative flex flex-col">
@@ -633,7 +806,7 @@ export default function TripPlanner() {
             >
               <Crosshair className={`w-4 h-4 ${dropMode === 'origin' ? 'text-[#00FF88]' : 'text-[#FF4444]'}`} />
               <span className="font-mono text-xs text-foreground">
-                Click map to set {dropMode === 'origin' ? 'origin' : 'destination'}
+                Tap map to set {dropMode === 'origin' ? 'origin' : 'destination'}
               </span>
               <button
                 onClick={() => setDropMode(null)}
@@ -644,13 +817,21 @@ export default function TripPlanner() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Schedule loading indicator */}
+        {schedulesLoading && (
+          <div className="absolute top-2 right-2 z-30 glass-panel rounded-lg px-3 py-1.5 flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin text-[#00D4FF]" />
+            <span className="font-mono text-[10px] text-muted-foreground">Loading schedules...</span>
+          </div>
+        )}
       </div>
 
       {/* Trip planner panel — bottom sheet on mobile, side panel on desktop */}
       <div className={`
         md:absolute md:top-16 md:right-3 md:bottom-3 md:w-96 md:rounded-lg
         w-full z-30 glass-panel overflow-hidden flex flex-col
-        ${panelExpanded ? 'max-h-[60dvh] md:max-h-none' : 'max-h-[140px] md:max-h-none'}
+        ${panelExpanded ? 'max-h-[65dvh] md:max-h-none' : 'max-h-[140px] md:max-h-none'}
         transition-all duration-300 ease-in-out
         rounded-t-2xl md:rounded-lg
       `}>
@@ -664,11 +845,20 @@ export default function TripPlanner() {
 
         {/* Input section */}
         <div className="p-3 md:p-4 border-b border-border/50 shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            <RouteIcon className="w-4 h-4 text-[#00D4FF]" />
-            <span className="font-mono text-xs font-bold tracking-wider text-[#00D4FF] uppercase">
-              Plan Your Trip
-            </span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <RouteIcon className="w-4 h-4 text-[#00D4FF]" />
+              <span className="font-mono text-xs font-bold tracking-wider text-[#00D4FF] uppercase">
+                Plan Your Trip
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-mono text-muted-foreground">
+              <Calendar className="w-3 h-3" />
+              <span>{dayStr} &middot; {timeStr}</span>
+              <span className="px-1 py-0.5 rounded bg-white/5 text-[8px] uppercase">
+                {currentDayType}
+              </span>
+            </div>
           </div>
 
           {/* Origin */}
@@ -759,7 +949,7 @@ export default function TripPlanner() {
           {/* Search button */}
           <Button
             onClick={findRoutes}
-            disabled={searching || (!originText && !originCoords) || (!destText && !destCoords)}
+            disabled={searching || loading || (!originText && !originCoords) || (!destText && !destCoords)}
             className="w-full mt-2 h-10 font-mono text-xs tracking-wider uppercase bg-[#00D4FF] hover:bg-[#00B4E6] text-[#0D1117] font-bold"
           >
             {searching ? (
@@ -779,7 +969,7 @@ export default function TripPlanner() {
                   key={i}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.1 }}
+                  transition={{ delay: i * 0.08 }}
                   onClick={() => setSelectedResult(selectedResult === i ? null : i)}
                   className={`
                     w-full text-left p-3 rounded-lg mb-2 transition-all border
@@ -792,29 +982,51 @@ export default function TripPlanner() {
                   {/* Summary */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      {result.segments.some(s => s.type === 'bus') ? (
-                        <Bus className="w-4 h-4 text-[#00D4FF]" />
-                      ) : (
+                      {result.walkOnly ? (
                         <Footprints className="w-4 h-4 text-[#00FF88]" />
+                      ) : result.bikeOnly ? (
+                        <Bike className="w-4 h-4 text-[#FFD700]" />
+                      ) : (
+                        <Bus className="w-4 h-4 text-[#00D4FF]" />
                       )}
                       <span className="font-mono text-sm font-bold text-foreground">
-                        {result.totalDuration} min
+                        {formatDuration(result.totalDuration)}
                       </span>
+                      {result.label && (
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-muted-foreground">
+                          {result.label}
+                        </span>
+                      )}
                     </div>
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      {result.totalDistance.toFixed(1)} mi
+                      {formatDistance(result.totalDistance)}
                     </span>
                   </div>
 
+                  {/* Time info */}
+                  {result.departureTime && (
+                    <div className="flex items-center gap-1.5 mb-2 text-[10px] font-mono text-muted-foreground">
+                      <Clock className="w-3 h-3" />
+                      <span>Departs {formatTime(result.departureTime)}</span>
+                      <ArrowRight className="w-3 h-3" />
+                      <span>Arrives {formatTime(result.arrivalTime)}</span>
+                    </div>
+                  )}
+
                   {/* Segment pills */}
                   <div className="flex items-center gap-1 flex-wrap">
-                    {result.segments.map((seg, j) => (
+                    {result.segments.filter(s => !(s.type === 'walk' && s.distance === 0 && s.duration <= 5 && s.fromName.startsWith('Transfer'))).map((seg, j) => (
                       <div key={j} className="flex items-center gap-1">
                         {j > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground" />}
                         {seg.type === 'walk' ? (
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/5 text-[10px] font-mono text-muted-foreground">
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#00FF88]/10 text-[10px] font-mono text-[#00FF88]">
                             <Footprints className="w-3 h-3" />
-                            {seg.duration}m
+                            {seg.duration}m &middot; {formatDistance(seg.distance)}
+                          </div>
+                        ) : seg.type === 'bike' ? (
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#FFD700]/10 text-[10px] font-mono text-[#FFD700]">
+                            <Bike className="w-3 h-3" />
+                            {seg.duration}m &middot; {formatDistance(seg.distance)}
                           </div>
                         ) : (
                           <div
@@ -827,7 +1039,7 @@ export default function TripPlanner() {
                           >
                             <Bus className="w-3 h-3" />
                             {seg.route?.short_name}
-                            {seg.stopsCount && <span className="opacity-70">({seg.stopsCount} stops)</span>}
+                            {seg.stopsCount !== undefined && <span className="opacity-70">({seg.stopsCount} stops)</span>}
                           </div>
                         )}
                       </div>
@@ -848,6 +1060,8 @@ export default function TripPlanner() {
                             <div className="mt-0.5">
                               {seg.type === 'walk' ? (
                                 <Footprints className="w-3.5 h-3.5 text-[#00FF88]" />
+                              ) : seg.type === 'bike' ? (
+                                <Bike className="w-3.5 h-3.5 text-[#FFD700]" />
                               ) : (
                                 <Bus className="w-3.5 h-3.5" style={{ color: seg.color }} />
                               )}
@@ -855,8 +1069,12 @@ export default function TripPlanner() {
                             <div className="flex-1">
                               <div className="text-xs text-foreground">
                                 {seg.type === 'walk'
-                                  ? `Walk ${seg.distance.toFixed(2)} mi (${seg.duration} min)`
-                                  : `Ride ${seg.route?.short_name} — ${seg.route?.long_name}`
+                                  ? seg.distance > 0
+                                    ? `Walk ${formatDistance(seg.distance)} (${seg.duration} min)`
+                                    : `Transfer wait (~${seg.duration} min)`
+                                  : seg.type === 'bike'
+                                    ? `Bike ${formatDistance(seg.distance)} (${seg.duration} min)`
+                                    : `Ride ${seg.route?.short_name} — ${seg.route?.long_name}`
                                 }
                               </div>
                               <div className="text-[10px] text-muted-foreground font-mono">
@@ -867,9 +1085,26 @@ export default function TripPlanner() {
                                   Departs {formatTime(seg.departureTime)} → Arrives {formatTime(seg.arrivalTime!)}
                                 </div>
                               )}
+                              {seg.type === 'bus' && !seg.departureTime && (
+                                <div className="text-[10px] font-mono mt-0.5 text-muted-foreground/60">
+                                  Estimated ~{seg.duration} min ride
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
+
+                        {/* Practicality note */}
+                        {result.walkOnly && (
+                          <div className="mt-2 p-2 rounded bg-[#00FF88]/5 border border-[#00FF88]/20 text-[10px] font-mono text-[#00FF88]">
+                            This distance is walkable — {formatDistance(result.totalDistance)} in about {formatDuration(result.totalDuration)}.
+                          </div>
+                        )}
+                        {result.bikeOnly && (
+                          <div className="mt-2 p-2 rounded bg-[#FFD700]/5 border border-[#FFD700]/20 text-[10px] font-mono text-[#FFD700]">
+                            Bikeable — {formatDistance(result.totalDistance)} in about {formatDuration(result.totalDuration)}.
+                          </div>
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
