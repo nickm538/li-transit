@@ -18,7 +18,7 @@ import {
 import type { TransitRoute, TransitStop } from '@/lib/transitData';
 import {
   MapPin, LocateFixed, Loader2, Crosshair, X, Footprints,
-  Bus, Clock, GripHorizontal, Navigation, Calendar,
+  Bus, Clock, GripHorizontal, Navigation, Calendar, RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -652,6 +652,34 @@ export default function NearbyStops() {
               Drop Pin
             </button>
           </div>
+
+          {/* Clear/Reset button */}
+          {(locationText || locationCoords || results.length > 0) && (
+            <button
+              onClick={() => {
+                setLocationText(''); setLocationCoords(null);
+                setResults([]); setSelectedStopIdx(null);
+                setDropMode(false);
+                if (inputRef.current) inputRef.current.value = '';
+                markersRef.current.forEach(m => (m.map = null));
+                markersRef.current = [];
+                polylinesRef.current.forEach(p => p.setMap(null));
+                polylinesRef.current = [];
+                walkPolylinesRef.current.forEach(p => p.setMap(null));
+                walkPolylinesRef.current = [];
+                if (infoWindowRef.current) infoWindowRef.current.close();
+                if (mapRef.current) {
+                  mapRef.current.panTo(LI_CENTER);
+                  mapRef.current.setZoom(10);
+                }
+              }}
+              className="flex items-center gap-1.5 mt-2 ml-5 px-2.5 py-1.5 rounded-md text-[10px] transition-colors hover:bg-white/5"
+              style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#b0aea5', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <RotateCcw className="w-3 h-3" />
+              Clear & Reset
+            </button>
+          )}
 
           {/* Hint text */}
           {!locationCoords && results.length === 0 && (

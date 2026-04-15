@@ -1,20 +1,22 @@
 /*
  * RouteSidebar — Floating glass panel listing all bus routes
  * Design: Translucent panel, route color indicators
- * Mobile: Bottom sheet with drag handle, Desktop: Left side panel
+ * Fully collapsible on both mobile and desktop via SidebarProvider
+ * Proper scroll bars on all content
  */
 import { useState, useMemo } from 'react';
 import { useTransit } from '@/contexts/TransitContext';
 import { useSidebar } from '@/components/MobileSidebarToggle';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, ChevronRight, X, GripHorizontal } from 'lucide-react';
+import { Search, ChevronRight, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function RouteSidebar() {
   const { routes, routeColors, selectedRoute, setSelectedRoute } = useTransit();
   const [search, setSearch] = useState('');
   const [countyFilter, setCountyFilter] = useState<'all' | 'Suffolk' | 'Nassau'>('all');
+  const { isOpen } = useSidebar();
 
   const filtered = useMemo(() => {
     return routes.filter(r => {
@@ -29,26 +31,23 @@ export default function RouteSidebar() {
   const suffolkRoutes = filtered.filter(r => r.county === 'Suffolk');
   const nassauRoutes = filtered.filter(r => r.county === 'Nassau');
 
-  const { isOpen, toggle } = useSidebar();
-
   return (
-    <div className={`
-      fixed md:absolute
-      bottom-0 left-0 right-0 md:right-auto
-      md:top-16 md:left-3 md:bottom-3 md:w-80
-      max-h-[65dvh] md:max-h-none
-      z-30 glass-panel rounded-t-2xl md:rounded-lg overflow-hidden flex flex-col
-      transition-transform duration-300
-      ${isOpen ? 'translate-y-0 md:translate-x-0' : 'translate-y-[calc(100%-3rem)] md:translate-y-0 md:-translate-x-[calc(100%+1rem)] md:translate-x-0'}
-    `}>
-      {/* Mobile drag handle */}
-      <button
-        onClick={toggle}
-        className="md:hidden flex items-center justify-center py-1.5 border-b border-border/30"
-      >
-        <GripHorizontal className="w-6 h-2 text-muted-foreground" />
-      </button>
-
+    <motion.div
+      initial={false}
+      animate={{
+        x: isOpen ? 0 : -400,
+        opacity: isOpen ? 1 : 0,
+      }}
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      className="
+        fixed md:absolute
+        top-16 left-0 bottom-0 w-[85vw] max-w-[320px]
+        md:top-16 md:left-3 md:bottom-3 md:w-80
+        z-30 glass-panel md:rounded-lg overflow-hidden flex flex-col
+        pointer-events-auto
+      "
+      style={{ display: isOpen ? 'flex' : 'none' }}
+    >
       {/* Header */}
       <div className="p-3 border-b border-border/50 shrink-0">
         <div className="flex items-center gap-2 mb-2">
@@ -102,8 +101,8 @@ export default function RouteSidebar() {
         </div>
       </div>
 
-      {/* Route list — native scrollable */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      {/* Route list — scrollable with visible scrollbar */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
         <div className="p-2 pb-6">
           {/* Suffolk section */}
           {suffolkRoutes.length > 0 && (
@@ -160,7 +159,7 @@ export default function RouteSidebar() {
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -169,23 +169,50 @@
     animation: pulse-glow 2s ease-in-out infinite;
   }
 
-  /* Custom scrollbar — warm tones */
+  /* Custom scrollbar — warm tones, always visible */
   .custom-scrollbar {
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.4 0.008 60) oklch(0.15 0.005 60);
   }
   .custom-scrollbar::-webkit-scrollbar {
-    width: 5px;
+    width: 6px;
   }
   .custom-scrollbar::-webkit-scrollbar-track {
     background: oklch(0.15 0.005 60);
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: oklch(0.35 0.008 60);
     border-radius: 3px;
   }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: oklch(0.4 0.008 60);
+    border-radius: 3px;
+    min-height: 40px;
+  }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.45 0.008 60);
+    background: oklch(0.5 0.008 60);
+  }
+  /* Horizontal scrollbar variant */
+  .custom-scrollbar-x {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.4 0.008 60) oklch(0.15 0.005 60);
+  }
+  .custom-scrollbar-x::-webkit-scrollbar {
+    height: 6px;
+  }
+  .custom-scrollbar-x::-webkit-scrollbar-track {
+    background: oklch(0.15 0.005 60);
+    border-radius: 3px;
+  }
+  .custom-scrollbar-x::-webkit-scrollbar-thumb {
+    background: oklch(0.4 0.008 60);
+    border-radius: 3px;
+  }
+  .custom-scrollbar-x::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.5 0.008 60);
   }
 
   /* Google Places Autocomplete dropdown — Claude-warm dark */

@@ -1,8 +1,7 @@
 /*
  * Home — Explore page with full Long Island map + all bus route overlays
  * Design: Claude-inspired warm dark — Space Grotesk headings, warm palette
- * Map: Google Maps with all 69 routes, gestureHandling: 'greedy' for full drag/scroll
- * Stop markers: Click shows info box with stop name, click again or X to dismiss
+ * Features: Collapsible sidebar, clear/reset, auto-zoom to selected route bounds
  */
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { MapView } from '@/components/Map';
@@ -11,9 +10,9 @@ import RouteSidebar from '@/components/RouteSidebar';
 import RouteDetail from '@/components/RouteDetail';
 import { useTransit } from '@/contexts/TransitContext';
 import { LI_CENTER } from '@/lib/transitData';
-import { Loader2, Bus } from 'lucide-react';
+import { Loader2, Bus, RotateCcw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { SidebarProvider, MobileSidebarToggle } from '@/components/MobileSidebarToggle';
+import { SidebarProvider, SidebarToggleButton } from '@/components/MobileSidebarToggle';
 
 export default function Home() {
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -30,27 +29,32 @@ export default function Home() {
       streetViewControl: true,
       fullscreenControl: false,
       zoomControl: true,
-      /* CRITICAL: 'greedy' allows single-finger drag on mobile + scroll wheel zoom on desktop */
       gestureHandling: 'greedy',
-      minZoom: 9,
+      minZoom: 8,
       maxZoom: 20,
       restriction: {
-        latLngBounds: { north: 41.3, south: 40.3, east: -71.5, west: -74.0 },
+        latLngBounds: { north: 41.5, south: 40.2, east: -71.0, west: -74.2 },
         strictBounds: false,
       },
-      /* Disable keyboard shortcuts that might interfere */
       keyboardShortcuts: true,
-      /* Allow scroll wheel zoom */
       scrollwheel: true,
-      /* Allow double-click zoom */
       disableDoubleClickZoom: false,
-      /* Draggable */
       draggable: true,
     });
 
     infoWindowRef.current = new google.maps.InfoWindow();
     setMapReady(true);
   }, []);
+
+  // Reset / clear handler — deselect route, reset map view
+  const handleReset = useCallback(() => {
+    setSelectedRoute(null);
+    if (mapRef.current) {
+      mapRef.current.panTo(LI_CENTER);
+      mapRef.current.setZoom(9);
+    }
+    if (infoWindowRef.current) infoWindowRef.current.close();
+  }, [setSelectedRoute]);
 
   // Draw all routes on the map
   useEffect(() => {
@@ -116,7 +120,7 @@ export default function Home() {
     });
   }, [mapReady, routes, routeColors, selectedRoute, setSelectedRoute]);
 
-  // Show stop markers when a route is selected
+  // Show stop markers when a route is selected — AUTO-ZOOM to route bounds
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
 
@@ -223,13 +227,22 @@ export default function Home() {
       markersRef.current.push(marker);
     });
 
-    if (selectedRoute.shape.length > 0) {
+    // AUTO-ZOOM: Use the STOPS as bounds (more reliable than shape data)
+    // This ensures the map zooms directly to where the route's stops actually are
+    if (selectedRoute.stops.length > 0) {
       const bounds = new google.maps.LatLngBounds();
-      selectedRoute.shape.forEach(([lat, lng]) => bounds.extend({ lat, lng }));
+      selectedRoute.stops.forEach(stop => {
+        bounds.extend({ lat: stop.lat, lng: stop.lon });
+      });
+      // Also include shape points for complete coverage
+      if (selectedRoute.shape && selectedRoute.shape.length > 0) {
+        selectedRoute.shape.forEach(([lat, lng]) => bounds.extend({ lat, lng }));
+      }
       const isMobile = window.innerWidth < 768;
+      // Use generous padding to ensure the route is well-centered and visible
       mapRef.current.fitBounds(bounds, isMobile
-        ? { top: 80, bottom: 20, left: 20, right: 20 }
-        : { top: 80, bottom: 20, left: 340, right: 420 }
+        ? { top: 80, bottom: 60, left: 20, right: 20 }
+        : { top: 80, bottom: 40, left: 340, right: 420 }
       );
     }
   }, [mapReady, selectedRoute, routeColors]);
@@ -238,7 +251,9 @@ export default function Home() {
     <SidebarProvider>
       <div className="h-[100dvh] w-screen overflow-hidden bg-background relative">
         <NavHeader />
-        <MobileSidebarToggle />
+
+        {/* Sidebar toggle button — works on both mobile and desktop */}
+        {!loading && <SidebarToggleButton />}
 
         {/* Loading overlay — Claude-warm style */}
         <AnimatePresence>
@@ -282,7 +297,7 @@ export default function Home() {
           />
         </div>
 
-        {/* Sidebar */}
+        {/* Sidebar — collapsible */}
         {!loading && <RouteSidebar />}
 
         {/* Route detail panel */}
@@ -290,8 +305,28 @@ export default function Home() {
           {selectedRoute && <RouteDetail />}
         </AnimatePresence>
 
+        {/* Clear/Reset button — visible when a route is selected */}
+        <AnimatePresence>
+          {selectedRoute && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              onClick={handleReset}
+              className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 glass-panel rounded-full px-4 py-2.5 flex items-center gap-2 hover:bg-white/10 transition-colors md:bottom-6"
+              style={{ borderColor: 'rgba(217,119,87,0.2)' }}
+              title="Clear selection & reset view"
+            >
+              <RotateCcw className="w-4 h-4" style={{ color: '#d97757' }} />
+              <span className="text-xs font-medium" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#faf9f5' }}>
+                Reset View
+              </span>
+            </motion.button>
+          )}
+        </AnimatePresence>
+
         {/* Map legend — Claude-warm style */}
-        {!loading && (
+        {!loading && !selectedRoute && (
           <div className="absolute bottom-2 right-2 md:bottom-4 md:right-4 z-20 glass-panel rounded-xl p-2.5 md:p-3">
             <div
               className="text-[10px] font-medium tracking-wide uppercase mb-1.5"

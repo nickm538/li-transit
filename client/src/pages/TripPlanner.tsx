@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import {
   MapPin, Navigation, Crosshair, Search, ArrowRight, Clock,
   Footprints, Bus, LocateFixed, Loader2, Route as RouteIcon, X,
-  GripHorizontal, Bike, AlertTriangle, Calendar, Eye,
+  GripHorizontal, Bike, AlertTriangle, Calendar, Eye, RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -1175,19 +1175,49 @@ export default function TripPlanner() {
             </div>
           </div>
 
-          {/* Search button */}
-          <Button
-            onClick={findRoutes}
-            disabled={searching || loading || (!originText && !originCoords) || (!destText && !destCoords)}
-            className="w-full mt-2 h-10 text-sm tracking-tight font-medium rounded-lg"
-            style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", background: '#d97757', color: '#141413' }}
-          >
-            {searching ? (
-              <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Searching...</>
-            ) : (
-              <><Search className="w-4 h-4 mr-2" /> Find Routes</>
+          {/* Action buttons */}
+          <div className="flex gap-2 mt-2">
+            <Button
+              onClick={findRoutes}
+              disabled={searching || loading || (!originText && !originCoords) || (!destText && !destCoords)}
+              className="flex-1 h-10 text-sm tracking-tight font-medium rounded-lg"
+              style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", background: '#d97757', color: '#141413' }}
+            >
+              {searching ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Searching...</>
+              ) : (
+                <><Search className="w-4 h-4 mr-2" /> Find Routes</>
+              )}
+            </Button>
+            {(originText || destText || results.length > 0) && (
+              <Button
+                onClick={() => {
+                  setOriginText(''); setOriginCoords(null);
+                  setDestText(''); setDestCoords(null);
+                  setResults([]); setSelectedResult(null);
+                  setDropMode(null);
+                  if (originInputRef.current) originInputRef.current.value = '';
+                  if (destInputRef.current) destInputRef.current.value = '';
+                  // Clear map markers and polylines
+                  markersRef.current.forEach(m => (m.map = null));
+                  markersRef.current = [];
+                  polylinesRef.current.forEach(p => p.setMap(null));
+                  polylinesRef.current = [];
+                  if (infoWindowRef.current) infoWindowRef.current.close();
+                  // Reset map view
+                  if (mapRef.current) {
+                    mapRef.current.panTo(LI_CENTER);
+                    mapRef.current.setZoom(10);
+                  }
+                }}
+                variant="outline"
+                className="h-10 px-3 rounded-lg border-border/50 hover:bg-white/5"
+                title="Clear all & reset"
+              >
+                <RotateCcw className="w-4 h-4" style={{ color: '#b0aea5' }} />
+              </Button>
             )}
-          </Button>
+          </div>
         </div>
 
         {/* Results — scrollable */}
