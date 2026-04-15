@@ -7,7 +7,7 @@ export const DATA_URLS = {
 };
 
 // Long Island center coordinates
-export const LI_CENTER = { lat: 40.79, lng: -73.2 };
+export const LI_CENTER = { lat: 40.78, lng: -73.3 };
 export const LI_BOUNDS = {
   north: 41.2,
   south: 40.5,

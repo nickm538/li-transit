@@ -43,7 +43,8 @@ export function MobileSidebarToggle() {
   return (
     <button
       onClick={toggle}
-      className="md:hidden fixed top-[4.5rem] left-3 z-40 w-10 h-10 rounded-lg glass-panel flex items-center justify-center text-foreground hover:text-[#00D4FF] transition-colors"
+      className="md:hidden fixed top-[4.5rem] left-3 z-40 w-10 h-10 rounded-xl glass-panel flex items-center justify-center text-foreground transition-colors"
+      style={{ borderColor: 'rgba(217,119,87,0.2)' }}
       aria-label={isOpen ? 'Hide routes' : 'Show routes'}
     >
       {isOpen ? <X className="w-5 h-5" /> : <List className="w-5 h-5" />}

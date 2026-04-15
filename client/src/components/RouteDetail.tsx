@@ -13,7 +13,7 @@ import { getDayType, formatTime, type TripSchedule } from '@/lib/transitData';
 export default function RouteDetail() {
   const { selectedRoute, setSelectedRoute, schedules, routeColors } = useTransit();
 
-  const color = selectedRoute ? routeColors.get(selectedRoute.id) || '#00D4FF' : '#00D4FF';
+  const color = selectedRoute ? routeColors.get(selectedRoute.id) || '#6a9bcc' : '#6a9bcc';
 
   const dayType = getDayType();
   const dayLabel = dayType === 'weekday' ? 'Weekday' : dayType === 'saturday' ? 'Saturday' : 'Sunday';
@@ -57,7 +57,7 @@ export default function RouteDetail() {
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div
-              className="px-3 py-1.5 rounded-md font-mono font-bold text-base"
+              className="px-3 py-1.5 rounded-lg font-medium text-base"
               style={{
                 backgroundColor: `${color}20`,
                 color: color,
@@ -73,11 +73,11 @@ export default function RouteDetail() {
                 <Badge
                   variant="secondary"
                   className="text-[10px] font-mono"
-                  style={{ color: selectedRoute.county === 'Suffolk' ? '#00D4FF' : '#FFB020' }}
+                  style={{ color: selectedRoute.county === 'Suffolk' ? '#6a9bcc' : '#d97757' }}
                 >
                   {selectedRoute.county}
                 </Badge>
-                <span className="text-[10px] text-muted-foreground font-mono">
+                <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                   {selectedRoute.stops.length} stops
                 </span>
               </div>
@@ -98,7 +98,7 @@ export default function RouteDetail() {
         <div className="p-3 md:p-4 border-b border-border/30">
           <div className="flex items-center gap-2 mb-3">
             <Clock className="w-3.5 h-3.5" style={{ color }} />
-            <span className="text-xs font-mono font-bold tracking-wider uppercase" style={{ color }}>
+            <span className="text-xs font-medium tracking-tight" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color }}>
               {dayLabel} Schedule
             </span>
           </div>
@@ -122,7 +122,7 @@ export default function RouteDetail() {
                         {formatTime(lastStop.arrival)}
                       </span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground font-mono">
+                    <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                       {trip.stops.length} stops
                     </span>
                   </div>
@@ -140,7 +140,7 @@ export default function RouteDetail() {
         <div className="p-3 md:p-4 pb-6">
           <div className="flex items-center gap-2 mb-3">
             <MapPin className="w-3.5 h-3.5" style={{ color }} />
-            <span className="text-xs font-mono font-bold tracking-wider uppercase" style={{ color }}>
+            <span className="text-xs font-medium tracking-tight" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color }}>
               Stops
             </span>
           </div>

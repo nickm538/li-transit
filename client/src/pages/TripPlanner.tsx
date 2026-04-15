@@ -961,8 +961,8 @@ export default function TripPlanner() {
     <div className="h-[100dvh] w-screen overflow-hidden bg-background relative flex flex-col">
       <NavHeader />
 
-      {/* Map — fills available space */}
-      <div className="flex-1 relative mt-14">
+      {/* Map — fills available space, fully interactive */}
+      <div className="flex-1 relative mt-14 map-container">
         <MapView
           className="w-full h-full"
           initialCenter={LI_CENTER}
@@ -979,8 +979,8 @@ export default function TripPlanner() {
               exit={{ opacity: 0, y: -10 }}
               className="absolute top-2 left-1/2 -translate-x-1/2 z-30 glass-panel rounded-lg px-4 py-2 flex items-center gap-2"
             >
-              <Crosshair className={`w-4 h-4 ${dropMode === 'origin' ? 'text-[#00FF88]' : 'text-[#FF4444]'}`} />
-              <span className="font-mono text-xs text-foreground">
+              <Crosshair className={`w-4 h-4`} style={{ color: dropMode === 'origin' ? '#788c5d' : '#d97757' }} />
+              <span className="text-xs text-foreground" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
                 Tap map to set {dropMode === 'origin' ? 'origin' : 'destination'}
               </span>
               <button
@@ -1069,12 +1069,12 @@ export default function TripPlanner() {
         <div className="p-3 md:p-4 border-b border-border/50 shrink-0">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <RouteIcon className="w-4 h-4 text-[#00D4FF]" />
-              <span className="font-mono text-xs font-bold tracking-wider text-[#00D4FF] uppercase">
+              <RouteIcon className="w-4 h-4" style={{ color: '#d97757' }} />
+              <span className="text-xs font-medium tracking-tight" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#d97757' }}>
                 Plan Your Trip
               </span>
             </div>
-            <div className="flex items-center gap-1.5 text-[9px] font-mono text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
               <Calendar className="w-3 h-3" />
               <span>{dayStr} &middot; {timeStr}</span>
               <span className="px-1 py-0.5 rounded bg-white/5 text-[8px] uppercase">
@@ -1086,7 +1086,7 @@ export default function TripPlanner() {
           {/* Origin */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#00FF88] shrink-0" />
+              <div className="w-3 h-3 rounded-full shrink-0" style={{ background: '#788c5d' }} />
               <div className="flex-1 relative">
                 <input
                   ref={originInputRef}
@@ -1094,7 +1094,8 @@ export default function TripPlanner() {
                   placeholder="Starting location or address..."
                   value={originText}
                   onChange={e => { setOriginText(e.target.value); setOriginCoords(null); }}
-                  className="w-full h-9 px-3 pr-8 text-xs bg-background/50 border border-border/50 rounded-md font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#00D4FF]/50"
+                  className="w-full h-9 px-3 pr-8 text-xs bg-background/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#d97757]/40"
+                  style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}
                 />
                 {originText && (
                   <button
@@ -1112,18 +1113,21 @@ export default function TripPlanner() {
               <button
                 onClick={useMyLocation}
                 disabled={locating}
-                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/20 hover:bg-[#00FF88]/20 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] transition-colors disabled:opacity-50"
+                style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", background: 'rgba(120,140,93,0.1)', color: '#788c5d', border: '1px solid rgba(120,140,93,0.2)' }}
               >
                 {locating ? <Loader2 className="w-3 h-3 animate-spin" /> : <LocateFixed className="w-3 h-3" />}
                 My Location
               </button>
               <button
                 onClick={() => { setDropMode(dropMode === 'origin' ? null : 'origin'); if (dropMode !== 'origin') toast.info('Tap the map to set your starting point'); }}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono transition-colors
-                  ${dropMode === 'origin'
-                    ? 'bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/40'
-                    : 'bg-white/5 text-muted-foreground border border-border/30 hover:bg-white/10'
-                  }`}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] transition-colors"
+                style={{
+                  fontFamily: "'Space Grotesk', system-ui, sans-serif",
+                  ...(dropMode === 'origin'
+                    ? { background: 'rgba(106,155,204,0.15)', color: '#6a9bcc', border: '1px solid rgba(106,155,204,0.3)' }
+                    : { background: 'rgba(255,255,255,0.04)', color: '#b0aea5', border: '1px solid rgba(255,255,255,0.08)' })
+                }}
               >
                 <Crosshair className="w-3 h-3" />
                 Drop Pin
@@ -1132,7 +1136,7 @@ export default function TripPlanner() {
 
             {/* Destination */}
             <div className="flex items-center gap-2 mt-1">
-              <div className="w-3 h-3 rounded-full bg-[#FF4444] shrink-0" />
+              <div className="w-3 h-3 rounded-full shrink-0" style={{ background: '#d97757' }} />
               <div className="flex-1 relative">
                 <input
                   ref={destInputRef}
@@ -1140,7 +1144,8 @@ export default function TripPlanner() {
                   placeholder="Destination address..."
                   value={destText}
                   onChange={e => { setDestText(e.target.value); setDestCoords(null); }}
-                  className="w-full h-9 px-3 pr-8 text-xs bg-background/50 border border-border/50 rounded-md font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#FF4444]/50"
+                  className="w-full h-9 px-3 pr-8 text-xs bg-background/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#d97757]/40"
+                  style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}
                 />
                 {destText && (
                   <button
@@ -1156,11 +1161,13 @@ export default function TripPlanner() {
             <div className="flex gap-1.5 ml-5">
               <button
                 onClick={() => { setDropMode(dropMode === 'dest' ? null : 'dest'); if (dropMode !== 'dest') toast.info('Tap the map to set your destination'); }}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono transition-colors
-                  ${dropMode === 'dest'
-                    ? 'bg-[#FF4444]/20 text-[#FF4444] border border-[#FF4444]/40'
-                    : 'bg-white/5 text-muted-foreground border border-border/30 hover:bg-white/10'
-                  }`}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] transition-colors"
+                style={{
+                  fontFamily: "'Space Grotesk', system-ui, sans-serif",
+                  ...(dropMode === 'dest'
+                    ? { background: 'rgba(217,119,87,0.15)', color: '#d97757', border: '1px solid rgba(217,119,87,0.3)' }
+                    : { background: 'rgba(255,255,255,0.04)', color: '#b0aea5', border: '1px solid rgba(255,255,255,0.08)' })
+                }}
               >
                 <Crosshair className="w-3 h-3" />
                 Drop Pin
@@ -1172,7 +1179,8 @@ export default function TripPlanner() {
           <Button
             onClick={findRoutes}
             disabled={searching || loading || (!originText && !originCoords) || (!destText && !destCoords)}
-            className="w-full mt-2 h-10 font-mono text-xs tracking-wider uppercase bg-[#00D4FF] hover:bg-[#00B4E6] text-[#0D1117] font-bold"
+            className="w-full mt-2 h-10 text-sm tracking-tight font-medium rounded-lg"
+            style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", background: '#d97757', color: '#141413' }}
           >
             {searching ? (
               <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Searching...</>
@@ -1196,8 +1204,8 @@ export default function TripPlanner() {
                   className={`
                     w-full text-left p-3 rounded-lg mb-2 transition-all border
                     ${selectedResult === i
-                      ? 'bg-white/10 border-[#00D4FF]/40 ring-1 ring-[#00D4FF]/20'
-                      : 'bg-white/5 border-transparent hover:bg-white/8 hover:border-border/30'
+                      ? 'bg-white/10 border-[#d97757]/30 ring-1 ring-[#d97757]/15'
+                      : 'bg-white/4 border-transparent hover:bg-white/6 hover:border-border/30'
                     }
                   `}
                 >
@@ -1205,13 +1213,13 @@ export default function TripPlanner() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       {result.walkOnly ? (
-                        <Footprints className="w-4 h-4 text-[#00FF88]" />
+                        <Footprints className="w-4 h-4" style={{ color: '#788c5d' }} />
                       ) : result.bikeOnly ? (
-                        <Bike className="w-4 h-4 text-[#FFD700]" />
+                        <Bike className="w-4 h-4" style={{ color: '#d97757' }} />
                       ) : (
-                        <Bus className="w-4 h-4 text-[#00D4FF]" />
+                        <Bus className="w-4 h-4" style={{ color: '#6a9bcc' }} />
                       )}
-                      <span className="font-mono text-sm font-bold text-foreground">
+                      <span className="text-sm font-medium text-foreground" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
                         {formatDuration(result.totalDuration)}
                       </span>
                       {result.label && (
@@ -1222,7 +1230,7 @@ export default function TripPlanner() {
                     </div>
                     <div className="flex items-center gap-2">
                       {selectedResult === i && (
-                        <Eye className="w-3 h-3 text-[#00D4FF]" />
+                        <Eye className="w-3 h-3" style={{ color: '#d97757' }} />
                       )}
                       <span className="font-mono text-[10px] text-muted-foreground">
                         {formatDistance(result.totalDistance)}
@@ -1246,18 +1254,19 @@ export default function TripPlanner() {
                       <div key={j} className="flex items-center gap-1">
                         {j > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground" />}
                         {seg.type === 'walk' ? (
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#00FF88]/10 text-[10px] font-mono text-[#00FF88]">
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]" style={{ fontFamily: "'JetBrains Mono', monospace", background: 'rgba(120,140,93,0.1)', color: '#788c5d' }}>
                             <Footprints className="w-3 h-3" />
                             {seg.duration}m &middot; {formatDistance(seg.distance)}
                           </div>
                         ) : seg.type === 'bike' ? (
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#FFD700]/10 text-[10px] font-mono text-[#FFD700]">
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]" style={{ fontFamily: "'JetBrains Mono', monospace", background: 'rgba(217,119,87,0.1)', color: '#d97757' }}>
                             <Bike className="w-3 h-3" />
                             {seg.duration}m &middot; {formatDistance(seg.distance)}
                           </div>
                         ) : (
                           <div
-                            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold"
+                            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium"
+                            
                             style={{
                               backgroundColor: `${seg.color}20`,
                               color: seg.color,
@@ -1286,15 +1295,15 @@ export default function TripPlanner() {
                           <div key={j} className="flex items-start gap-2.5 py-1.5">
                             <div className="mt-0.5 flex flex-col items-center">
                               {seg.type === 'walk' ? (
-                                <Footprints className="w-3.5 h-3.5 text-[#00FF88]" />
+                                <Footprints className="w-3.5 h-3.5" style={{ color: '#788c5d' }} />
                               ) : seg.type === 'bike' ? (
-                                <Bike className="w-3.5 h-3.5 text-[#FFD700]" />
+                                <Bike className="w-3.5 h-3.5" style={{ color: '#d97757' }} />
                               ) : (
                                 <Bus className="w-3.5 h-3.5" style={{ color: seg.color }} />
                               )}
                               {j < result.segments.length - 1 && (
                                 <div className="w-px h-4 mt-1" style={{
-                                  background: seg.type === 'bus' ? seg.color : seg.type === 'walk' ? '#00FF88' : '#FFD700',
+                                  background: seg.type === 'bus' ? seg.color : seg.type === 'walk' ? '#788c5d' : '#d97757',
                                   opacity: 0.3,
                                 }} />
                               )}

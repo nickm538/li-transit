@@ -52,7 +52,7 @@ export default function RouteSidebar() {
       {/* Header */}
       <div className="p-3 border-b border-border/50 shrink-0">
         <div className="flex items-center gap-2 mb-2">
-          <h2 className="font-mono text-xs font-bold tracking-wider text-foreground uppercase">
+          <h2 className="text-xs font-medium tracking-tight text-foreground" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
             Bus Routes
           </h2>
           <Badge variant="secondary" className="font-mono text-[10px]">
@@ -67,7 +67,8 @@ export default function RouteSidebar() {
             placeholder="Search routes..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-8 h-8 text-xs bg-background/50 border-border/50 font-mono"
+            className="pl-8 h-8 text-xs bg-background/50 border-border/50 rounded-lg"
+            style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}
           />
           {search && (
             <button
@@ -86,11 +87,11 @@ export default function RouteSidebar() {
               key={f}
               onClick={() => setCountyFilter(f)}
               className={`
-                px-2.5 py-1 rounded text-[10px] font-mono font-medium uppercase tracking-wider transition-all
+                px-2.5 py-1 rounded-md text-[10px] font-medium tracking-tight transition-all
                 ${countyFilter === f
-                  ? (f === 'Suffolk' ? 'bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/30'
-                    : f === 'Nassau' ? 'bg-[#FFB020]/20 text-[#FFB020] border border-[#FFB020]/30'
-                    : 'bg-primary/15 text-primary border border-primary/30')
+                  ? (f === 'Suffolk' ? 'bg-[#6a9bcc]/15 text-[#6a9bcc] border border-[#6a9bcc]/25'
+                    : f === 'Nassau' ? 'bg-[#d97757]/15 text-[#d97757] border border-[#d97757]/25'
+                    : 'bg-primary/12 text-primary border border-primary/25')
                   : 'bg-secondary text-muted-foreground border border-transparent hover:border-border/50'
                 }
               `}
@@ -108,8 +109,8 @@ export default function RouteSidebar() {
           {suffolkRoutes.length > 0 && (
             <div className="mb-3">
               <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
-                <div className="w-2 h-2 rounded-full bg-[#00D4FF]" />
-                <span className="text-[10px] font-mono font-bold tracking-wider text-[#00D4FF] uppercase">
+                <div className="w-2 h-2 rounded-full" style={{ background: '#6a9bcc' }} />
+                <span className="text-[10px] font-medium tracking-tight" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#6a9bcc' }}>
                   Suffolk County Transit
                 </span>
               </div>
@@ -132,8 +133,8 @@ export default function RouteSidebar() {
           {nassauRoutes.length > 0 && (
             <div>
               <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
-                <div className="w-2 h-2 rounded-full bg-[#FFB020]" />
-                <span className="text-[10px] font-mono font-bold tracking-wider text-[#FFB020] uppercase">
+                <div className="w-2 h-2 rounded-full" style={{ background: '#d97757' }} />
+                <span className="text-[10px] font-medium tracking-tight" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#d97757' }}>
                   NICE Bus (Nassau)
                 </span>
               </div>
@@ -153,7 +154,7 @@ export default function RouteSidebar() {
           )}
 
           {filtered.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground text-xs font-mono">
+            <div className="text-center py-8 text-muted-foreground text-xs" style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}>
               No routes match your search
             </div>
           )}

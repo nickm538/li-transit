@@ -5,6 +5,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { TransitProvider } from "./contexts/TransitContext";
+import Splash from "./pages/Splash";
 import Home from "./pages/Home";
 import TripPlanner from "./pages/TripPlanner";
 import NearbyStops from "./pages/NearbyStops";
@@ -12,7 +13,8 @@ import NearbyStops from "./pages/NearbyStops";
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
+      <Route path="/" component={Splash} />
+      <Route path="/explore" component={Home} />
       <Route path="/plan" component={TripPlanner} />
       <Route path="/nearby" component={NearbyStops} />
       <Route path="/404" component={NotFound} />
