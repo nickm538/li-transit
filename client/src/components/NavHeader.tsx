@@ -19,6 +19,7 @@ export default function NavHeader() {
   const tabs = [
     { path: '/', label: 'Explore', icon: MapPin },
     { path: '/plan', label: 'Plan Trip', icon: Navigation },
+    { path: '/nearby', label: 'Nearby', icon: Bus },
   ];
 
   return (
