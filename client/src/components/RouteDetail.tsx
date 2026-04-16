@@ -211,7 +211,7 @@ export default function RouteDetail() {
                 <a
                   href={routeDetails.officialUrl}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-[11px] font-medium hover:opacity-80 transition-opacity"
                   style={{ color }}
                 >
