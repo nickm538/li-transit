@@ -106,13 +106,14 @@ export function MapView({
   }, [init]);
 
   return (
-    <div
-      ref={mapContainer}
-      data-map-canvas="true"
-      className={cn("w-full h-full", className)}
-    >
+    <div className={cn("relative w-full h-full", className)}>
+      <div
+        ref={mapContainer}
+        data-map-canvas="true"
+        className="w-full h-full"
+      />
       {mapError && (
-        <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-4 z-10">
           <div
             className="text-sm font-medium"
             style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#d97757' }}
