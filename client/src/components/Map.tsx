@@ -1,6 +1,7 @@
 /**
  * GOOGLE MAPS FRONTEND INTEGRATION
- * Uses Manus proxy for authentication - no API key needed from user.
+ * Loads directly from maps.googleapis.com with key= param.
+ * Falls back to Manus Forge proxy if VITE_FRONTEND_FORGE_API_URL is set.
  */
 
 /// <reference types="@types/google.maps" />
@@ -17,10 +18,10 @@ declare global {
 }
 
 const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
-const FORGE_BASE_URL =
-  import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
-  "https://forge.butterfly-effect.dev";
-const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
+const FORGE_API_URL = import.meta.env.VITE_FRONTEND_FORGE_API_URL;
+const MAPS_SCRIPT_URL = FORGE_API_URL
+  ? `${FORGE_API_URL}/v1/maps/proxy/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`
+  : `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`;
 
 // Singleton promise to prevent loading the script multiple times
 function loadMapScript(): Promise<void> {
@@ -32,7 +33,7 @@ function loadMapScript(): Promise<void> {
   }
   window._mapsLoading = new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`;
+    script.src = MAPS_SCRIPT_URL;
     script.async = true;
     script.crossOrigin = "anonymous";
     script.onload = () => {
