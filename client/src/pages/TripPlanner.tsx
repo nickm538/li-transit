@@ -445,26 +445,11 @@ export default function TripPlanner() {
           details?.patterns.filter(pattern =>
             pattern.dayTypes.includes(dayType)
           ) || [];
-        const patterns: Array<{
-          id: string;
-          label: string;
-          stops: TransitStop[];
-          tripIdsByDay: Partial<Record<DayType, string[]>>;
-        }> =
-          scheduledPatterns.length > 0
-            ? scheduledPatterns
-            : details?.patterns.length
-              ? details.patterns
-              : [
-                  {
-                    id: `${route.id}::fallback`,
-                    label: route.long_name,
-                    stops: route.stops,
-                    tripIdsByDay: {},
-                  },
-                ];
+        if (scheduledPatterns.length === 0) {
+          return [];
+        }
 
-        return patterns.map(pattern => ({
+        return scheduledPatterns.map(pattern => ({
           route,
           patternId: pattern.id,
           patternLabel: pattern.label,
