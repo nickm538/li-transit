@@ -1,4 +1,10 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   DATA_URLS,
   assignRouteColors,
@@ -7,7 +13,7 @@ import {
   type NetworkData,
   type RouteSchedule,
   type RouteDetails,
-} from '@/lib/transitData';
+} from "@/lib/transitData";
 
 interface TransitState {
   routes: TransitRoute[];
@@ -31,13 +37,19 @@ export function TransitProvider({ children }: { children: ReactNode }) {
   const [routes, setRoutes] = useState<TransitRoute[]>([]);
   const [network, setNetwork] = useState<NetworkData | null>(null);
   const [schedules, setSchedules] = useState<Record<string, RouteSchedule>>({});
-  const [routeDetailsById, setRouteDetailsById] = useState<Record<string, RouteDetails>>({});
-  const [routeColors, setRouteColors] = useState<Map<string, string>>(new Map());
+  const [routeDetailsById, setRouteDetailsById] = useState<
+    Record<string, RouteDetails>
+  >({});
+  const [routeColors, setRouteColors] = useState<Map<string, string>>(
+    new Map()
+  );
   const [loading, setLoading] = useState(true);
   const [schedulesLoading, setSchedulesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<TransitRoute | null>(null);
-  const [selectedRoutePatternId, setSelectedRoutePatternId] = useState<string | null>(null);
+  const [selectedRoutePatternId, setSelectedRoutePatternId] = useState<
+    string | null
+  >(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,7 +66,7 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         ]);
 
         if (!routesRes.ok || !networkRes.ok) {
-          throw new Error('Failed to fetch transit data');
+          throw new Error("Failed to fetch transit data");
         }
 
         const routesData: TransitRoute[] = await routesRes.json();
@@ -75,7 +87,9 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         }
         setSchedulesLoading(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load transit data');
+        setError(
+          err instanceof Error ? err.message : "Failed to load transit data"
+        );
         setSchedulesLoading(false);
       } finally {
         setLoading(false);
@@ -98,7 +112,7 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         error,
         selectedRoute,
         selectedRoutePatternId,
-        setSelectedRoute: (route) => {
+        setSelectedRoute: route => {
           setSelectedRoute(route);
           setSelectedRoutePatternId(null);
         },
@@ -113,6 +127,6 @@ export function TransitProvider({ children }: { children: ReactNode }) {
 
 export function useTransit() {
   const ctx = useContext(TransitContext);
-  if (!ctx) throw new Error('useTransit must be used within TransitProvider');
+  if (!ctx) throw new Error("useTransit must be used within TransitProvider");
   return ctx;
 }

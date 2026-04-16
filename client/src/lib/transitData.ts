@@ -1,9 +1,13 @@
 // CDN URLs for GTFS processed data
 export const DATA_URLS = {
-  routes: 'https://d2xsxph8kpxj0f.cloudfront.net/310519663213670124/dqxafGoDXFKaTAvDioc79S/routes_6e9863a4.json',
-  stops: 'https://d2xsxph8kpxj0f.cloudfront.net/310519663213670124/dqxafGoDXFKaTAvDioc79S/stops_efa96089.json',
-  network: 'https://d2xsxph8kpxj0f.cloudfront.net/310519663213670124/dqxafGoDXFKaTAvDioc79S/network_45a603ab.json',
-  schedules: 'https://d2xsxph8kpxj0f.cloudfront.net/310519663213670124/dqxafGoDXFKaTAvDioc79S/schedules_81c5f024.json',
+  routes:
+    "https://d2xsxph8kpxj0f.cloudfront.net/310519663213670124/dqxafGoDXFKaTAvDioc79S/routes_6e9863a4.json",
+  stops:
+    "https://d2xsxph8kpxj0f.cloudfront.net/310519663213670124/dqxafGoDXFKaTAvDioc79S/stops_efa96089.json",
+  network:
+    "https://d2xsxph8kpxj0f.cloudfront.net/310519663213670124/dqxafGoDXFKaTAvDioc79S/network_45a603ab.json",
+  schedules:
+    "https://d2xsxph8kpxj0f.cloudfront.net/310519663213670124/dqxafGoDXFKaTAvDioc79S/schedules_81c5f024.json",
 };
 
 // Long Island center coordinates
@@ -17,26 +21,82 @@ export const LI_BOUNDS = {
 
 // Color palettes for routes
 export const SUFFOLK_COLORS = [
-  '#00D4FF', '#00B4E6', '#0099CC', '#0080B3', '#006699',
-  '#00E5CC', '#00CCA3', '#00B38F', '#009980', '#008066',
-  '#33CCFF', '#66D9FF', '#99E6FF', '#00BFFF', '#0099E6',
-  '#00FFD4', '#33FFE0', '#66FFEB', '#00E6BF', '#00CCA8',
-  '#4DD4FF', '#80E0FF', '#00C8FF', '#00AADD', '#0088BB',
+  "#00D4FF",
+  "#00B4E6",
+  "#0099CC",
+  "#0080B3",
+  "#006699",
+  "#00E5CC",
+  "#00CCA3",
+  "#00B38F",
+  "#009980",
+  "#008066",
+  "#33CCFF",
+  "#66D9FF",
+  "#99E6FF",
+  "#00BFFF",
+  "#0099E6",
+  "#00FFD4",
+  "#33FFE0",
+  "#66FFEB",
+  "#00E6BF",
+  "#00CCA8",
+  "#4DD4FF",
+  "#80E0FF",
+  "#00C8FF",
+  "#00AADD",
+  "#0088BB",
 ];
 
 export const NASSAU_COLORS = [
-  '#FFB020', '#FF9900', '#FF8000', '#FF6600', '#E65C00',
-  '#FFCC33', '#FFD966', '#FFE599', '#FFBF00', '#E6AC00',
-  '#FF9933', '#FFB366', '#FFCC99', '#FF8C1A', '#E67300',
-  '#FFD700', '#FFC000', '#FFB300', '#FFA500', '#FF9800',
-  '#FFDB4D', '#FFE680', '#FFF0B3', '#FFD11A', '#E6BC00',
-  '#FFA64D', '#FFB980', '#FFCCB3', '#FF9933', '#E68A00',
-  '#FFCC66', '#FFD999', '#FFE5CC', '#FFBF33', '#E6AC1A',
-  '#FFB84D', '#FFCA80', '#FFDCB3', '#FFAD33', '#E69C1A',
-  '#FFC266', '#FFD499', '#FFE6CC', '#FFB833', '#E6A51A',
+  "#FFB020",
+  "#FF9900",
+  "#FF8000",
+  "#FF6600",
+  "#E65C00",
+  "#FFCC33",
+  "#FFD966",
+  "#FFE599",
+  "#FFBF00",
+  "#E6AC00",
+  "#FF9933",
+  "#FFB366",
+  "#FFCC99",
+  "#FF8C1A",
+  "#E67300",
+  "#FFD700",
+  "#FFC000",
+  "#FFB300",
+  "#FFA500",
+  "#FF9800",
+  "#FFDB4D",
+  "#FFE680",
+  "#FFF0B3",
+  "#FFD11A",
+  "#E6BC00",
+  "#FFA64D",
+  "#FFB980",
+  "#FFCCB3",
+  "#FF9933",
+  "#E68A00",
+  "#FFCC66",
+  "#FFD999",
+  "#FFE5CC",
+  "#FFBF33",
+  "#E6AC1A",
+  "#FFB84D",
+  "#FFCA80",
+  "#FFDCB3",
+  "#FFAD33",
+  "#E69C1A",
+  "#FFC266",
+  "#FFD499",
+  "#FFE6CC",
+  "#FFB833",
+  "#E6A51A",
 ];
 
-const NASSAU_SCHEDULES_URL = 'https://www.nicebus.com/Tools/Maps-and-Schedules';
+const NASSAU_SCHEDULES_URL = "https://www.nicebus.com/Tools/Maps-and-Schedules";
 
 export interface TransitRoute {
   id: string;
@@ -57,7 +117,10 @@ export interface TransitStop {
 }
 
 export interface NetworkData {
-  nodes: Record<string, { name: string; lat: number; lon: number; county: string }>;
+  nodes: Record<
+    string,
+    { name: string; lat: number; lon: number; county: string }
+  >;
   edges: { from: string; to: string; distance: number; routes: string[] }[];
 }
 
@@ -77,7 +140,7 @@ export interface TripSchedule {
   }[];
 }
 
-export type DayType = 'weekday' | 'saturday' | 'sunday';
+export type DayType = "weekday" | "saturday" | "sunday";
 
 export interface RoutePattern {
   id: string;
@@ -102,7 +165,7 @@ export interface RouteDetails {
   officialLabel: string;
 }
 
-export const DAY_TYPES: DayType[] = ['weekday', 'saturday', 'sunday'];
+export const DAY_TYPES: DayType[] = ["weekday", "saturday", "sunday"];
 
 // Assign unique colors to each route
 export function assignRouteColors(routes: TransitRoute[]): Map<string, string> {
@@ -111,8 +174,11 @@ export function assignRouteColors(routes: TransitRoute[]): Map<string, string> {
   let nassauIdx = 0;
 
   for (const route of routes) {
-    if (route.county === 'Suffolk') {
-      colorMap.set(route.id, SUFFOLK_COLORS[suffolkIdx % SUFFOLK_COLORS.length]);
+    if (route.county === "Suffolk") {
+      colorMap.set(
+        route.id,
+        SUFFOLK_COLORS[suffolkIdx % SUFFOLK_COLORS.length]
+      );
       suffolkIdx++;
     } else {
       colorMap.set(route.id, NASSAU_COLORS[nassauIdx % NASSAU_COLORS.length]);
@@ -124,51 +190,58 @@ export function assignRouteColors(routes: TransitRoute[]): Map<string, string> {
 
 // Known US federal holidays that may affect transit (Sunday schedule typically)
 const KNOWN_HOLIDAYS_2026: string[] = [
-  '2026-01-01', // New Year's Day
-  '2026-01-19', // MLK Day
-  '2026-02-16', // Presidents' Day
-  '2026-05-25', // Memorial Day
-  '2026-07-04', // Independence Day (observed)
-  '2026-09-07', // Labor Day
-  '2026-11-26', // Thanksgiving
-  '2026-12-25', // Christmas
+  "2026-01-01", // New Year's Day
+  "2026-01-19", // MLK Day
+  "2026-02-16", // Presidents' Day
+  "2026-05-25", // Memorial Day
+  "2026-07-04", // Independence Day (observed)
+  "2026-09-07", // Labor Day
+  "2026-11-26", // Thanksgiving
+  "2026-12-25", // Christmas
 ];
 
 // Get day type for schedule lookup — with holiday awareness
-export function getDayType(date?: Date): 'weekday' | 'saturday' | 'sunday' {
+export function getDayType(date?: Date): "weekday" | "saturday" | "sunday" {
   const d = date || new Date();
-  const dateStr = d.toISOString().split('T')[0];
+  const dateStr = d.toISOString().split("T")[0];
 
   // Check if it's a holiday — most transit systems run Sunday schedule
   if (KNOWN_HOLIDAYS_2026.includes(dateStr)) {
-    return 'sunday';
+    return "sunday";
   }
 
   const day = d.getDay();
-  if (day === 0) return 'sunday';
-  if (day === 6) return 'saturday';
-  return 'weekday';
+  if (day === 0) return "sunday";
+  if (day === 6) return "saturday";
+  return "weekday";
 }
 
 // Parse GTFS time (can be > 24:00:00 for next-day trips)
-export function parseGtfsTime(timeStr: string): { hours: number; minutes: number; totalMinutes: number } {
-  const parts = timeStr.split(':');
+export function parseGtfsTime(timeStr: string): {
+  hours: number;
+  minutes: number;
+  totalMinutes: number;
+} {
+  const parts = timeStr.split(":");
   const hours = parseInt(parts[0], 10);
   const minutes = parseInt(parts[1], 10);
   return { hours, minutes, totalMinutes: hours * 60 + minutes };
 }
 
-function getOfficialRouteInfo(route: TransitRoute): { officialUrl: string; officialLabel: string } {
-  if (route.county === 'Suffolk') {
+function getOfficialRouteInfo(route: TransitRoute): {
+  officialUrl: string;
+  officialLabel: string;
+} {
+  if (route.county === "Suffolk") {
     return {
       officialUrl: `https://sctbus.org/Route-${encodeURIComponent(route.short_name)}`,
-      officialLabel: 'Official Suffolk route page',
+      officialLabel: "Official Suffolk route page",
     };
   }
 
   return {
     officialUrl: NASSAU_SCHEDULES_URL,
-    officialLabel: 'NICE maps & schedules',
+    officialLabel: "NICE maps & schedules",
   };
 }
 
@@ -186,14 +259,19 @@ function roundHeadway(minutes: number | null): number | null {
   return Math.max(5, Math.round(minutes / 5) * 5);
 }
 
-function getTypicalHeadway(trips: TripSchedule[], mode: DayType): number | null {
+function getTypicalHeadway(
+  trips: TripSchedule[],
+  mode: DayType
+): number | null {
   const departures = trips
     .map(trip => {
-      const firstStop = [...trip.stops].sort((a, b) => a.sequence - b.sequence)[0];
+      const firstStop = [...trip.stops].sort(
+        (a, b) => a.sequence - b.sequence
+      )[0];
       return firstStop ? parseGtfsTime(firstStop.departure).totalMinutes : null;
     })
     .filter((minutes): minutes is number => minutes !== null)
-    .filter(minutes => (mode === 'weekday' ? minutes < 18 * 60 : true))
+    .filter(minutes => (mode === "weekday" ? minutes < 18 * 60 : true))
     .sort((a, b) => a - b);
 
   if (departures.length < 2) return null;
@@ -210,26 +288,29 @@ function getTypicalHeadway(trips: TripSchedule[], mode: DayType): number | null 
 }
 
 function getServiceLabel(serviceDays: DayType[]): string {
-  const hasWeekday = serviceDays.includes('weekday');
-  const hasSaturday = serviceDays.includes('saturday');
-  const hasSunday = serviceDays.includes('sunday');
+  const hasWeekday = serviceDays.includes("weekday");
+  const hasSaturday = serviceDays.includes("saturday");
+  const hasSunday = serviceDays.includes("sunday");
 
-  if (hasWeekday && hasSaturday && hasSunday) return 'Runs daily';
-  if (!hasWeekday && hasSaturday && hasSunday) return 'Weekends only';
-  if (hasWeekday && !hasSaturday && !hasSunday) return 'Weekdays only';
-  if (!hasWeekday && hasSaturday && !hasSunday) return 'Saturday only';
-  if (!hasWeekday && !hasSaturday && hasSunday) return 'Sunday only';
-  if (hasWeekday && hasSaturday && !hasSunday) return 'No Sunday service';
-  if (hasWeekday && !hasSaturday && hasSunday) return 'No Saturday service';
-  return 'Limited service';
+  if (hasWeekday && hasSaturday && hasSunday) return "Runs daily";
+  if (!hasWeekday && hasSaturday && hasSunday) return "Weekends only";
+  if (hasWeekday && !hasSaturday && !hasSunday) return "Weekdays only";
+  if (!hasWeekday && hasSaturday && !hasSunday) return "Saturday only";
+  if (!hasWeekday && !hasSaturday && hasSunday) return "Sunday only";
+  if (hasWeekday && hasSaturday && !hasSunday) return "No Sunday service";
+  if (hasWeekday && !hasSaturday && hasSunday) return "No Saturday service";
+  return "Limited service";
 }
 
 function getFrequencyLabel(schedule?: RouteSchedule): string | null {
   if (!schedule) return null;
 
-  const weekdayHeadway = getTypicalHeadway(schedule.weekday || [], 'weekday');
-  const saturdayHeadway = getTypicalHeadway(schedule.saturday || [], 'saturday');
-  const sundayHeadway = getTypicalHeadway(schedule.sunday || [], 'sunday');
+  const weekdayHeadway = getTypicalHeadway(schedule.weekday || [], "weekday");
+  const saturdayHeadway = getTypicalHeadway(
+    schedule.saturday || [],
+    "saturday"
+  );
+  const sundayHeadway = getTypicalHeadway(schedule.sunday || [], "sunday");
   const weekendHeadway = saturdayHeadway ?? sundayHeadway;
 
   if (weekdayHeadway && weekendHeadway && weekdayHeadway !== weekendHeadway) {
@@ -246,9 +327,15 @@ function buildServiceNotes(
   serviceDays: DayType[]
 ): string[] {
   const notes = [getServiceLabel(serviceDays)];
-  const weekdayHeadway = schedule ? getTypicalHeadway(schedule.weekday || [], 'weekday') : null;
-  const saturdayHeadway = schedule ? getTypicalHeadway(schedule.saturday || [], 'saturday') : null;
-  const sundayHeadway = schedule ? getTypicalHeadway(schedule.sunday || [], 'sunday') : null;
+  const weekdayHeadway = schedule
+    ? getTypicalHeadway(schedule.weekday || [], "weekday")
+    : null;
+  const saturdayHeadway = schedule
+    ? getTypicalHeadway(schedule.saturday || [], "saturday")
+    : null;
+  const sundayHeadway = schedule
+    ? getTypicalHeadway(schedule.sunday || [], "sunday")
+    : null;
   const weekendHeadway = saturdayHeadway ?? sundayHeadway;
 
   if (weekdayHeadway) {
@@ -259,15 +346,18 @@ function buildServiceNotes(
     notes.push(`Typical weekend service every ~${weekendHeadway} minutes`);
   }
 
-  const totalTrips = DAY_TYPES.reduce((sum, dayType) => sum + (schedule?.[dayType]?.length || 0), 0);
+  const totalTrips = DAY_TYPES.reduce(
+    (sum, dayType) => sum + (schedule?.[dayType]?.length || 0),
+    0
+  );
   if (totalTrips > 0 && totalTrips <= 8) {
-    notes.push('Limited scheduled trips');
+    notes.push("Limited scheduled trips");
   }
 
   notes.push(
-    route.county === 'Suffolk'
-      ? 'Official Suffolk route pages include printable schedules and rider notes'
-      : 'Official NICE schedules and rider notices are available from the Nassau agency page'
+    route.county === "Suffolk"
+      ? "Official Suffolk route pages include printable schedules and rider notes"
+      : "Official NICE schedules and rider notices are available from the Nassau agency page"
   );
 
   return notes;
@@ -276,7 +366,7 @@ function buildServiceNotes(
 function getFallbackPattern(route: TransitRoute): RoutePattern {
   return {
     id: `${route.id}::fallback`,
-    signature: route.stops.map(stop => stop.id).join('>'),
+    signature: route.stops.map(stop => stop.id).join(">"),
     label: route.long_name,
     stopIds: route.stops.map(stop => stop.id),
     stops: route.stops,
@@ -295,26 +385,30 @@ function buildPatternLabels(patterns: RoutePattern[]): RoutePattern[] {
   const baseCounts = new Map<string, number>();
 
   for (const pattern of patterns) {
-    const firstStop = pattern.stops[0]?.name || 'Start';
-    const lastStop = pattern.stops[pattern.stops.length - 1]?.name || 'End';
+    const firstStop = pattern.stops[0]?.name || "Start";
+    const lastStop = pattern.stops[pattern.stops.length - 1]?.name || "End";
     const base = `${firstStop} → ${lastStop}`;
     baseCounts.set(base, (baseCounts.get(base) || 0) + 1);
   }
 
   return patterns.map(pattern => {
-    const firstStop = pattern.stops[0]?.name || 'Start';
-    const lastStop = pattern.stops[pattern.stops.length - 1]?.name || 'End';
+    const firstStop = pattern.stops[0]?.name || "Start";
+    const lastStop = pattern.stops[pattern.stops.length - 1]?.name || "End";
     const base = `${firstStop} → ${lastStop}`;
     const via = getPatternViaStop(pattern.stops);
 
     return {
       ...pattern,
-      label: (baseCounts.get(base) || 0) > 1 && via ? `${base} via ${via}` : base,
+      label:
+        (baseCounts.get(base) || 0) > 1 && via ? `${base} via ${via}` : base,
     };
   });
 }
 
-export function buildRouteDetails(route: TransitRoute, schedule?: RouteSchedule): RouteDetails {
+export function buildRouteDetails(
+  route: TransitRoute,
+  schedule?: RouteSchedule
+): RouteDetails {
   const stopLookup = new Map(route.stops.map(stop => [stop.id, stop]));
   const patternMap = new Map<string, RoutePattern>();
   const serviceDays: DayType[] = [];
@@ -335,7 +429,7 @@ export function buildRouteDetails(route: TransitRoute, schedule?: RouteSchedule)
 
         if (stopIds.length < 2) continue;
 
-        const signature = stopIds.join('>');
+        const signature = stopIds.join(">");
         const existing = patternMap.get(signature);
 
         if (existing) {
@@ -343,14 +437,19 @@ export function buildRouteDetails(route: TransitRoute, schedule?: RouteSchedule)
           if (!existing.dayTypes.includes(dayType)) {
             existing.dayTypes.push(dayType);
           }
-          existing.tripIdsByDay[dayType] = [...(existing.tripIdsByDay[dayType] || []), trip.trip_id];
+          existing.tripIdsByDay[dayType] = [
+            ...(existing.tripIdsByDay[dayType] || []),
+            trip.trip_id,
+          ];
         } else {
           patternMap.set(signature, {
             id: `${route.id}::${patternMap.size + 1}`,
             signature,
             label: route.long_name,
             stopIds,
-            stops: stopIds.map(stopId => stopLookup.get(stopId)!).filter(Boolean),
+            stops: stopIds
+              .map(stopId => stopLookup.get(stopId)!)
+              .filter(Boolean),
             dayTypes: [dayType],
             tripCount: 1,
             tripIdsByDay: { [dayType]: [trip.trip_id] },
@@ -361,7 +460,10 @@ export function buildRouteDetails(route: TransitRoute, schedule?: RouteSchedule)
   }
 
   const patterns = buildPatternLabels(
-    (patternMap.size > 0 ? [...patternMap.values()] : [getFallbackPattern(route)]).sort((a, b) => {
+    (patternMap.size > 0
+      ? Array.from(patternMap.values())
+      : [getFallbackPattern(route)]
+    ).sort((a, b) => {
       if (b.tripCount !== a.tripCount) return b.tripCount - a.tripCount;
       return b.stops.length - a.stops.length;
     })
@@ -386,7 +488,12 @@ export function buildRouteDetailsMap(
   routes: TransitRoute[],
   schedules: Record<string, RouteSchedule>
 ): Record<string, RouteDetails> {
-  return Object.fromEntries(routes.map(route => [route.id, buildRouteDetails(route, schedules[route.id])]));
+  return Object.fromEntries(
+    routes.map(route => [
+      route.id,
+      buildRouteDetails(route, schedules[route.id]),
+    ])
+  );
 }
 
 export function getActiveRoutePattern(
@@ -397,32 +504,43 @@ export function getActiveRoutePattern(
   if (!details || details.patterns.length === 0) return null;
 
   if (preferredPatternId) {
-    const preferred = details.patterns.find(pattern => pattern.id === preferredPatternId);
+    const preferred = details.patterns.find(
+      pattern => pattern.id === preferredPatternId
+    );
     if (preferred) return preferred;
   }
 
-  return details.patterns.find(pattern => pattern.dayTypes.includes(dayType))
-    || details.patterns[0]
-    || null;
+  return (
+    details.patterns.find(pattern => pattern.dayTypes.includes(dayType)) ||
+    details.patterns[0] ||
+    null
+  );
 }
 
 // Format time for display
 export function formatTime(timeStr: string): string {
   const { hours, minutes } = parseGtfsTime(timeStr);
   const h = hours % 24;
-  const ampm = h >= 12 ? 'PM' : 'AM';
+  const ampm = h >= 12 ? "PM" : "AM";
   const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+  return `${h12}:${minutes.toString().padStart(2, "0")} ${ampm}`;
 }
 
 // Calculate distance between two points (haversine) in miles
-export function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export function haversine(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
   const R = 3959; // miles
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.asin(Math.sqrt(a));
 }
 
