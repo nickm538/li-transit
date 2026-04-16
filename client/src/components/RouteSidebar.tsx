@@ -7,6 +7,7 @@
 import { useState, useMemo } from "react";
 import { useTransit } from "@/contexts/TransitContext";
 import { useSidebar } from "@/components/MobileSidebarToggle";
+import { getActiveRoutePattern, getDayType } from "@/lib/transitData";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, ChevronRight, X } from "lucide-react";
@@ -18,6 +19,7 @@ export default function RouteSidebar() {
     routeColors,
     routeDetailsById,
     selectedRoute,
+    selectedRoutePatternId,
     setSelectedRoute,
   } = useTransit();
   const [search, setSearch] = useState("");
@@ -25,6 +27,7 @@ export default function RouteSidebar() {
     "all" | "Suffolk" | "Nassau"
   >("all");
   const { isOpen } = useSidebar();
+  const dayType = getDayType();
 
   const filtered = useMemo(() => {
     return routes.filter(r => {
@@ -36,6 +39,26 @@ export default function RouteSidebar() {
       return matchSearch && matchCounty;
     });
   }, [routes, search, countyFilter]);
+
+  const stopCountByRouteId = useMemo(() => {
+    return Object.fromEntries(
+      routes.map(route => {
+        const activePattern = getActiveRoutePattern(
+          routeDetailsById[route.id],
+          dayType,
+          selectedRoute?.id === route.id ? selectedRoutePatternId : null
+        );
+
+        return [route.id, activePattern?.stops.length || route.stops.length];
+      })
+    );
+  }, [
+    dayType,
+    routeDetailsById,
+    routes,
+    selectedRoute?.id,
+    selectedRoutePatternId,
+  ]);
 
   const suffolkRoutes = filtered.filter(r => r.county === "Suffolk");
   const nassauRoutes = filtered.filter(r => r.county === "Nassau");
@@ -147,8 +170,7 @@ export default function RouteSidebar() {
                     key={route.id}
                     route={route}
                     stopCount={
-                      routeDetailsById[route.id]?.stopCount ||
-                      route.stops.length
+                      stopCountByRouteId[route.id] || route.stops.length
                     }
                     color={routeColors.get(route.id) || "#00D4FF"}
                     isSelected={selectedRoute?.id === route.id}
@@ -188,8 +210,7 @@ export default function RouteSidebar() {
                     key={route.id}
                     route={route}
                     stopCount={
-                      routeDetailsById[route.id]?.stopCount ||
-                      route.stops.length
+                      stopCountByRouteId[route.id] || route.stops.length
                     }
                     color={routeColors.get(route.id) || "#FFB020"}
                     isSelected={selectedRoute?.id === route.id}
