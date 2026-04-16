@@ -54,9 +54,13 @@ export default function RouteDetail() {
   const routeSchedule = useMemo(() => {
     if (!selectedRoute) return [];
     const schedule = schedules[selectedRoute.id]?.[dayType] || [];
+    const selectedPatternHasNoTripsToday =
+      selectedRoutePatternId !== null &&
+      selectedRoutePatternId === activePattern?.id &&
+      !activePattern?.tripIdsByDay[dayType];
     const allowedTripIds =
       activePattern?.tripIdsByDay[dayType] ??
-      (selectedRoutePatternId === activePattern?.id ? [] : undefined);
+      (selectedPatternHasNoTripsToday ? [] : undefined);
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
