@@ -4,32 +4,64 @@
  * Fully collapsible on both mobile and desktop via SidebarProvider
  * Proper scroll bars on all content
  */
-import { useState, useMemo } from 'react';
-import { useTransit } from '@/contexts/TransitContext';
-import { useSidebar } from '@/components/MobileSidebarToggle';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Search, ChevronRight, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useMemo } from "react";
+import { useTransit } from "@/contexts/TransitContext";
+import { useSidebar } from "@/components/MobileSidebarToggle";
+import { getActiveRoutePattern, getDayType } from "@/lib/transitData";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Search, ChevronRight, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function RouteSidebar() {
-  const { routes, routeColors, selectedRoute, setSelectedRoute } = useTransit();
-  const [search, setSearch] = useState('');
-  const [countyFilter, setCountyFilter] = useState<'all' | 'Suffolk' | 'Nassau'>('all');
+  const {
+    routes,
+    routeColors,
+    routeDetailsById,
+    selectedRoute,
+    selectedRoutePatternId,
+    setSelectedRoute,
+  } = useTransit();
+  const [search, setSearch] = useState("");
+  const [countyFilter, setCountyFilter] = useState<
+    "all" | "Suffolk" | "Nassau"
+  >("all");
   const { isOpen } = useSidebar();
+  const dayType = getDayType();
 
   const filtered = useMemo(() => {
     return routes.filter(r => {
-      const matchSearch = search === '' ||
+      const matchSearch =
+        search === "" ||
         r.short_name.toLowerCase().includes(search.toLowerCase()) ||
         r.long_name.toLowerCase().includes(search.toLowerCase());
-      const matchCounty = countyFilter === 'all' || r.county === countyFilter;
+      const matchCounty = countyFilter === "all" || r.county === countyFilter;
       return matchSearch && matchCounty;
     });
   }, [routes, search, countyFilter]);
 
-  const suffolkRoutes = filtered.filter(r => r.county === 'Suffolk');
-  const nassauRoutes = filtered.filter(r => r.county === 'Nassau');
+  const stopCountByRouteId = useMemo(() => {
+    return Object.fromEntries(
+      routes.map(route => {
+        const activePattern = getActiveRoutePattern(
+          routeDetailsById[route.id],
+          dayType,
+          selectedRoute?.id === route.id ? selectedRoutePatternId : null
+        );
+
+        return [route.id, activePattern?.stops.length || route.stops.length];
+      })
+    );
+  }, [
+    dayType,
+    routeDetailsById,
+    routes,
+    selectedRoute?.id,
+    selectedRoutePatternId,
+  ]);
+
+  const suffolkRoutes = filtered.filter(r => r.county === "Suffolk");
+  const nassauRoutes = filtered.filter(r => r.county === "Nassau");
 
   return (
     <motion.div
@@ -38,7 +70,7 @@ export default function RouteSidebar() {
         x: isOpen ? 0 : -400,
         opacity: isOpen ? 1 : 0,
       }}
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
       className="
         fixed md:absolute
         top-16 left-0 bottom-0 w-[85vw] max-w-[320px]
@@ -46,12 +78,15 @@ export default function RouteSidebar() {
         z-30 glass-panel md:rounded-lg overflow-hidden flex flex-col
         pointer-events-auto
       "
-      style={{ display: isOpen ? 'flex' : 'none' }}
+      style={{ display: isOpen ? "flex" : "none" }}
     >
       {/* Header */}
       <div className="p-3 border-b border-border/50 shrink-0">
         <div className="flex items-center gap-2 mb-2">
-          <h2 className="text-xs font-medium tracking-tight text-foreground" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
+          <h2
+            className="text-xs font-medium tracking-tight text-foreground"
+            style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}
+          >
             Bus Routes
           </h2>
           <Badge variant="secondary" className="font-mono text-[10px]">
@@ -71,7 +106,7 @@ export default function RouteSidebar() {
           />
           {search && (
             <button
-              onClick={() => setSearch('')}
+              onClick={() => setSearch("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               <X className="w-3 h-3" />
@@ -81,21 +116,28 @@ export default function RouteSidebar() {
 
         {/* County filter */}
         <div className="flex gap-1.5 mt-2">
-          {(['all', 'Suffolk', 'Nassau'] as const).map(f => (
+          {(["all", "Suffolk", "Nassau"] as const).map(f => (
             <button
               key={f}
               onClick={() => setCountyFilter(f)}
               className={`
                 px-2.5 py-1 rounded-md text-[10px] font-medium tracking-tight transition-all
-                ${countyFilter === f
-                  ? (f === 'Suffolk' ? 'bg-[#6a9bcc]/15 text-[#6a9bcc] border border-[#6a9bcc]/25'
-                    : f === 'Nassau' ? 'bg-[#d97757]/15 text-[#d97757] border border-[#d97757]/25'
-                    : 'bg-primary/12 text-primary border border-primary/25')
-                  : 'bg-secondary text-muted-foreground border border-transparent hover:border-border/50'
+                ${
+                  countyFilter === f
+                    ? f === "Suffolk"
+                      ? "bg-[#6a9bcc]/15 text-[#6a9bcc] border border-[#6a9bcc]/25"
+                      : f === "Nassau"
+                        ? "bg-[#d97757]/15 text-[#d97757] border border-[#d97757]/25"
+                        : "bg-primary/12 text-primary border border-primary/25"
+                    : "bg-secondary text-muted-foreground border border-transparent hover:border-border/50"
                 }
               `}
             >
-              {f === 'all' ? `All (${routes.length})` : f === 'Suffolk' ? `Suffolk (${routes.filter(r => r.county === 'Suffolk').length})` : `Nassau (${routes.filter(r => r.county === 'Nassau').length})`}
+              {f === "all"
+                ? `All (${routes.length})`
+                : f === "Suffolk"
+                  ? `Suffolk (${routes.filter(r => r.county === "Suffolk").length})`
+                  : `Nassau (${routes.filter(r => r.county === "Nassau").length})`}
             </button>
           ))}
         </div>
@@ -108,8 +150,17 @@ export default function RouteSidebar() {
           {suffolkRoutes.length > 0 && (
             <div className="mb-3">
               <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
-                <div className="w-2 h-2 rounded-full" style={{ background: '#6a9bcc' }} />
-                <span className="text-[10px] font-medium tracking-tight" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#6a9bcc' }}>
+                <div
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: "#6a9bcc" }}
+                />
+                <span
+                  className="text-[10px] font-medium tracking-tight"
+                  style={{
+                    fontFamily: "'Space Grotesk', system-ui, sans-serif",
+                    color: "#6a9bcc",
+                  }}
+                >
                   Suffolk County Transit
                 </span>
               </div>
@@ -118,9 +169,16 @@ export default function RouteSidebar() {
                   <RouteItem
                     key={route.id}
                     route={route}
-                    color={routeColors.get(route.id) || '#00D4FF'}
+                    stopCount={
+                      stopCountByRouteId[route.id] || route.stops.length
+                    }
+                    color={routeColors.get(route.id) || "#00D4FF"}
                     isSelected={selectedRoute?.id === route.id}
-                    onClick={() => setSelectedRoute(selectedRoute?.id === route.id ? null : route)}
+                    onClick={() =>
+                      setSelectedRoute(
+                        selectedRoute?.id === route.id ? null : route
+                      )
+                    }
                     index={i}
                   />
                 ))}
@@ -132,8 +190,17 @@ export default function RouteSidebar() {
           {nassauRoutes.length > 0 && (
             <div>
               <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
-                <div className="w-2 h-2 rounded-full" style={{ background: '#d97757' }} />
-                <span className="text-[10px] font-medium tracking-tight" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#d97757' }}>
+                <div
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: "#d97757" }}
+                />
+                <span
+                  className="text-[10px] font-medium tracking-tight"
+                  style={{
+                    fontFamily: "'Space Grotesk', system-ui, sans-serif",
+                    color: "#d97757",
+                  }}
+                >
                   NICE Bus (Nassau)
                 </span>
               </div>
@@ -142,9 +209,16 @@ export default function RouteSidebar() {
                   <RouteItem
                     key={route.id}
                     route={route}
-                    color={routeColors.get(route.id) || '#FFB020'}
+                    stopCount={
+                      stopCountByRouteId[route.id] || route.stops.length
+                    }
+                    color={routeColors.get(route.id) || "#FFB020"}
                     isSelected={selectedRoute?.id === route.id}
-                    onClick={() => setSelectedRoute(selectedRoute?.id === route.id ? null : route)}
+                    onClick={() =>
+                      setSelectedRoute(
+                        selectedRoute?.id === route.id ? null : route
+                      )
+                    }
                     index={i}
                   />
                 ))}
@@ -153,7 +227,10 @@ export default function RouteSidebar() {
           )}
 
           {filtered.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground text-xs" style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}>
+            <div
+              className="text-center py-8 text-muted-foreground text-xs"
+              style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}
+            >
               No routes match your search
             </div>
           )}
@@ -165,12 +242,14 @@ export default function RouteSidebar() {
 
 function RouteItem({
   route,
+  stopCount,
   color,
   isSelected,
   onClick,
   index,
 }: {
   route: any;
+  stopCount: number;
   color: string;
   isSelected: boolean;
   onClick: () => void;
@@ -185,9 +264,10 @@ function RouteItem({
       onClick={onClick}
       className={`
         w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left transition-all group
-        ${isSelected
-          ? 'bg-white/10 border border-white/10'
-          : 'hover:bg-white/5 border border-transparent'
+        ${
+          isSelected
+            ? "bg-white/10 border border-white/10"
+            : "hover:bg-white/5 border border-transparent"
         }
       `}
     >
@@ -196,7 +276,7 @@ function RouteItem({
         className="w-1 h-8 rounded-full shrink-0 transition-all"
         style={{
           backgroundColor: color,
-          boxShadow: isSelected ? `0 0 8px ${color}` : 'none',
+          boxShadow: isSelected ? `0 0 8px ${color}` : "none",
         }}
       />
 
@@ -214,14 +294,16 @@ function RouteItem({
 
       {/* Route name */}
       <div className="flex-1 min-w-0">
-        <div className="text-xs text-foreground truncate">{route.long_name}</div>
+        <div className="text-xs text-foreground truncate">
+          {route.long_name}
+        </div>
         <div className="text-[10px] text-muted-foreground font-mono">
-          {route.stops.length} stops
+          {stopCount} stops
         </div>
       </div>
 
       <ChevronRight
-        className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : 'group-hover:translate-x-0.5'}`}
+        className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isSelected ? "rotate-90" : "group-hover:translate-x-0.5"}`}
       />
     </motion.button>
   );
