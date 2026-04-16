@@ -259,15 +259,25 @@ function roundHeadway(minutes: number | null): number | null {
   return Math.max(5, Math.round(minutes / 5) * 5);
 }
 
+function getFirstStopBySequence(trip: TripSchedule) {
+  let firstStop = trip.stops[0];
+
+  for (let i = 1; i < trip.stops.length; i++) {
+    if (trip.stops[i].sequence < firstStop.sequence) {
+      firstStop = trip.stops[i];
+    }
+  }
+
+  return firstStop;
+}
+
 function getTypicalHeadway(
   trips: TripSchedule[],
   mode: DayType
 ): number | null {
   const departures = trips
     .map(trip => {
-      const firstStop = [...trip.stops].sort(
-        (a, b) => a.sequence - b.sequence
-      )[0];
+      const firstStop = getFirstStopBySequence(trip);
       return firstStop ? parseGtfsTime(firstStop.departure).totalMinutes : null;
     })
     .filter((minutes): minutes is number => minutes !== null)
