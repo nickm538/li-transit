@@ -54,7 +54,9 @@ export default function RouteDetail() {
   const routeSchedule = useMemo(() => {
     if (!selectedRoute) return [];
     const schedule = schedules[selectedRoute.id]?.[dayType] || [];
-    const allowedTripIds = activePattern?.tripIdsByDay[dayType];
+    const allowedTripIds =
+      activePattern?.tripIdsByDay[dayType] ??
+      (selectedRoutePatternId === activePattern?.id ? [] : undefined);
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
@@ -69,7 +71,13 @@ export default function RouteDetail() {
         return hours * 60 + minutes >= nowMinutes - 30;
       })
       .slice(0, 10);
-  }, [activePattern, dayType, schedules, selectedRoute]);
+  }, [
+    activePattern,
+    dayType,
+    schedules,
+    selectedRoute,
+    selectedRoutePatternId,
+  ]);
 
   if (!selectedRoute) return null;
 
