@@ -302,7 +302,7 @@ body {
   user-select: none;
   overflow: hidden;
 }
-.map-container > div:has(> .gm-style) {
+.map-container > [data-map-canvas="true"] {
   width: 100% !important;
   height: 100% !important;
 }
