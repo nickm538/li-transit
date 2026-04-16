@@ -89,6 +89,17 @@ export default function TripPlanner() {
   useEffect(() => { originCoordsRef.current = originCoords; }, [originCoords]);
   useEffect(() => { destCoordsRef.current = destCoords; }, [destCoords]);
 
+  // Force map resize when drop mode changes to prevent black screen
+  useEffect(() => {
+    if (mapRef.current) {
+      // Trigger resize after a brief delay to let CSS settle
+      const timer = setTimeout(() => {
+        google.maps.event.trigger(mapRef.current!, 'resize');
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [dropMode]);
+
   // All stops flattened (deduplicated)
   const allStops = useMemo(() => {
     const stops: TransitStop[] = [];
@@ -958,11 +969,11 @@ export default function TripPlanner() {
   const dayStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
   return (
-    <div className="h-[100dvh] w-screen overflow-hidden bg-background relative flex flex-col">
+    <div className="h-[100dvh] w-screen overflow-hidden bg-background relative">
       <NavHeader />
 
-      {/* Map — fills available space, fully interactive */}
-      <div className="flex-1 relative mt-14 map-container">
+      {/* Map — fills entire viewport below nav, NOTHING else inside this div */}
+      <div className="absolute inset-0 top-14 map-container" style={{ zIndex: 1 }}>
         <MapView
           className="w-full h-full"
           initialCenter={LI_CENTER}
@@ -971,30 +982,28 @@ export default function TripPlanner() {
         />
       </div>
 
-      {/* Overlays — positioned over the map but outside map-container to avoid
-          glass-panel backdrop-filter / AnimatePresence interfering with Google Maps compositing */}
-      <AnimatePresence>
-        {dropMode && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute top-16 left-1/2 -translate-x-1/2 z-30 glass-panel rounded-lg px-4 py-2 flex items-center gap-2"
-          >
-            <Crosshair className={`w-4 h-4`} style={{ color: dropMode === 'origin' ? '#788c5d' : '#d97757' }} />
-            <span className="text-xs text-foreground" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
-              Tap map to set {dropMode === 'origin' ? 'origin' : 'destination'}
-            </span>
-            <button
-              onClick={() => setDropMode(null)}
-              className="ml-2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Drop mode indicator — OUTSIDE map container to avoid compositing conflicts */}
+      <div
+        className="absolute top-16 left-1/2 -translate-x-1/2 z-30 glass-panel rounded-lg px-4 py-2 flex items-center gap-2"
+        style={{
+          opacity: dropMode ? 1 : 0,
+          pointerEvents: dropMode ? 'auto' : 'none',
+          transition: 'opacity 0.2s ease',
+        }}
+      >
+        <Crosshair className="w-4 h-4" style={{ color: dropMode === 'origin' ? '#788c5d' : '#d97757' }} />
+        <span className="text-xs text-foreground" style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
+          Tap map to set {dropMode === 'origin' ? 'origin' : 'destination'}
+        </span>
+        <button
+          onClick={() => setDropMode(null)}
+          className="ml-2 text-muted-foreground hover:text-foreground"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
 
+      {/* Schedule loading indicator — OUTSIDE map container */}
       {schedulesLoading && (
         <div className="absolute top-16 right-2 z-30 glass-panel rounded-lg px-3 py-1.5 flex items-center gap-2">
           <Loader2 className="w-3 h-3 animate-spin text-[#00D4FF]" />
@@ -1002,64 +1011,63 @@ export default function TripPlanner() {
         </div>
       )}
 
-      <AnimatePresence>
-        {selectedResult !== null && results[selectedResult] && (
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 glass-panel rounded-lg p-3 max-w-[200px]"
-          >
-            <div className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">Legend</div>
-            <div className="space-y-1.5">
-              {results[selectedResult].segments
-                .filter(s => s.type === 'bus')
-                .map((seg, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="w-4 h-1 rounded-full" style={{ backgroundColor: seg.color }} />
-                    <span className="font-mono text-[10px] text-foreground">
-                      Route {seg.route?.short_name}
-                    </span>
-                  </div>
-                ))
-              }
-              {results[selectedResult].segments.some(s => s.type === 'walk' && s.distance > 0.03) && (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-0 border-t-2 border-dashed border-[#00FF88]" />
-                  <span className="font-mono text-[10px] text-[#00FF88]">Walking</span>
-                </div>
-              )}
-              {results[selectedResult].segments.some(s => s.type === 'bike') && (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-0 border-t-2 border-dashed border-[#FFD700]" />
-                  <span className="font-mono text-[10px] text-[#FFD700]">Biking</span>
-                </div>
-              )}
-              <div className="flex items-center gap-2 pt-1 border-t border-border/30">
-                <div className="w-3 h-3 rounded-full bg-[#00FF88] border-2 border-[#0D1117]" />
-                <span className="font-mono text-[10px] text-muted-foreground">Start</span>
+      {/* Route visualization legend — OUTSIDE map container */}
+      <div
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 glass-panel rounded-lg p-3 max-w-[200px]"
+        style={{
+          opacity: selectedResult !== null && results[selectedResult] ? 1 : 0,
+          pointerEvents: selectedResult !== null && results[selectedResult] ? 'auto' : 'none',
+          transition: 'opacity 0.2s ease',
+        }}
+      >
+        <div className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">Legend</div>
+        <div className="space-y-1.5">
+          {selectedResult !== null && results[selectedResult] && results[selectedResult].segments
+            .filter(s => s.type === 'bus')
+            .map((seg, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="w-4 h-1 rounded-full" style={{ backgroundColor: seg.color }} />
+                <span className="font-mono text-[10px] text-foreground">
+                  Route {seg.route?.short_name}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#FF4444] border-2 border-[#0D1117]" />
-                <span className="font-mono text-[10px] text-muted-foreground">End</span>
-              </div>
+            ))
+          }
+          {selectedResult !== null && results[selectedResult] && results[selectedResult].segments.some(s => s.type === 'walk' && s.distance > 0.03) && (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-0 border-t-2 border-dashed border-[#00FF88]" />
+              <span className="font-mono text-[10px] text-[#00FF88]">Walking</span>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+          {selectedResult !== null && results[selectedResult] && results[selectedResult].segments.some(s => s.type === 'bike') && (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-0 border-t-2 border-dashed border-[#FFD700]" />
+              <span className="font-mono text-[10px] text-[#FFD700]">Biking</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2 pt-1 border-t border-border/30">
+            <div className="w-3 h-3 rounded-full bg-[#00FF88] border-2 border-[#0D1117]" />
+            <span className="font-mono text-[10px] text-muted-foreground">Start</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-[#FF4444] border-2 border-[#0D1117]" />
+            <span className="font-mono text-[10px] text-muted-foreground">End</span>
+          </div>
+        </div>
+      </div>
 
-      {/* Trip planner panel — bottom sheet on mobile, side panel on desktop */}
-      {/* Auto-collapse on mobile when drop mode is active so user can see the map */}
-      <div className={`
-        md:absolute md:top-16 md:right-3 md:bottom-3 md:w-96 md:rounded-lg
-        w-full z-30 glass-panel overflow-hidden flex flex-col
-        ${dropMode
-          ? 'max-h-[60px] md:max-h-[200px] pointer-events-none opacity-30'
-          : panelExpanded ? 'max-h-[65dvh] md:max-h-none' : 'max-h-[140px] md:max-h-none'
-        }
-        transition-[max-height,opacity] duration-300 ease-in-out
-        rounded-t-2xl md:rounded-lg
-      `}>
+      {/* Trip planner panel — side panel on desktop, bottom sheet on mobile */}
+      <div
+        className={`
+          absolute
+          md:top-[4.5rem] md:right-3 md:bottom-3 md:w-96 md:left-auto md:rounded-lg
+          bottom-0 left-0 right-0
+          glass-panel overflow-hidden flex flex-col
+          ${panelExpanded ? 'max-h-[65dvh] md:max-h-none' : 'max-h-[140px] md:max-h-none'}
+          rounded-t-2xl md:rounded-lg
+        `}
+        style={{ zIndex: 30, transition: 'max-height 0.3s ease-in-out' }}
+      >
         {/* Mobile drag handle */}
         <button
           onClick={() => setPanelExpanded(!panelExpanded)}

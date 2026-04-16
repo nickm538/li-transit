@@ -36,12 +36,9 @@ function loadMapScript(): Promise<void> {
     script.src = MAPS_SCRIPT_URL;
     script.async = true;
     script.crossOrigin = "anonymous";
-    script.onload = () => {
-      resolve();
-    };
+    script.onload = () => resolve();
     script.onerror = () => {
       console.error("Failed to load Google Maps script");
-      // Retry once
       window._mapsLoading = undefined;
       setTimeout(() => {
         const retryScript = document.createElement("script");
@@ -97,7 +94,6 @@ export function MapView({
     } catch (error) {
       console.error("Google Maps failed to initialize:", error);
       setMapError(true);
-      // Allow retry by clearing the cached promise
       window._mapsLoading = undefined;
     }
   });
@@ -130,6 +126,7 @@ export function MapView({
           <button
             onClick={() => {
               setMapError(false);
+              map.current = null;
               init();
             }}
             className="mt-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors hover:opacity-80"
