@@ -93,8 +93,8 @@ export function MapView({
       if (onMapReady) {
         onMapReady(map.current);
       }
-    } catch {
-      console.error("Google Maps failed to initialize");
+    } catch (error) {
+      console.error("Google Maps failed to initialize:", error);
       setMapError(true);
       // Allow retry by clearing the cached promise
       window._mapsLoading = undefined;
