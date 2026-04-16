@@ -19,6 +19,9 @@ declare global {
 
 const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
 const FORGE_API_URL = import.meta.env.VITE_FRONTEND_FORGE_API_URL;
+const MAP_ID =
+  import.meta.env.VITE_GOOGLE_MAP_ID ||
+  import.meta.env.VITE_FRONTEND_FORGE_MAP_ID;
 const MAPS_SCRIPT_URL = FORGE_API_URL
   ? `${FORGE_API_URL}/v1/maps/proxy/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`
   : `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`;
@@ -86,7 +89,7 @@ export function MapView({
         fullscreenControl: true,
         zoomControl: true,
         streetViewControl: true,
-        mapId: "DEMO_MAP_ID",
+        ...(MAP_ID ? { mapId: MAP_ID } : {}),
       });
       if (onMapReady) {
         onMapReady(map.current);
