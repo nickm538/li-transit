@@ -36,6 +36,8 @@ export const NASSAU_COLORS = [
   '#FFC266', '#FFD499', '#FFE6CC', '#FFB833', '#E6A51A',
 ];
 
+const NASSAU_SCHEDULES_URL = 'https://www.nicebus.com/Tools/Maps-and-Schedules';
+
 export interface TransitRoute {
   id: string;
   short_name: string;
@@ -74,6 +76,33 @@ export interface TripSchedule {
     sequence: number;
   }[];
 }
+
+export type DayType = 'weekday' | 'saturday' | 'sunday';
+
+export interface RoutePattern {
+  id: string;
+  signature: string;
+  label: string;
+  stopIds: string[];
+  stops: TransitStop[];
+  dayTypes: DayType[];
+  tripCount: number;
+  tripIdsByDay: Partial<Record<DayType, string[]>>;
+}
+
+export interface RouteDetails {
+  patterns: RoutePattern[];
+  defaultPatternId: string | null;
+  stopCount: number;
+  serviceDays: DayType[];
+  serviceLabel: string;
+  frequencyLabel: string | null;
+  serviceNotes: string[];
+  officialUrl: string;
+  officialLabel: string;
+}
+
+export const DAY_TYPES: DayType[] = ['weekday', 'saturday', 'sunday'];
 
 // Assign unique colors to each route
 export function assignRouteColors(routes: TransitRoute[]): Map<string, string> {
@@ -127,6 +156,254 @@ export function parseGtfsTime(timeStr: string): { hours: number; minutes: number
   const hours = parseInt(parts[0], 10);
   const minutes = parseInt(parts[1], 10);
   return { hours, minutes, totalMinutes: hours * 60 + minutes };
+}
+
+function getOfficialRouteInfo(route: TransitRoute): { officialUrl: string; officialLabel: string } {
+  if (route.county === 'Suffolk') {
+    return {
+      officialUrl: `https://sctbus.org/Route-${encodeURIComponent(route.short_name)}`,
+      officialLabel: 'Official Suffolk route page',
+    };
+  }
+
+  return {
+    officialUrl: NASSAU_SCHEDULES_URL,
+    officialLabel: 'NICE maps & schedules',
+  };
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+function roundHeadway(minutes: number | null): number | null {
+  if (minutes === null) return null;
+  return Math.max(5, Math.round(minutes / 5) * 5);
+}
+
+function getTypicalHeadway(trips: TripSchedule[], mode: DayType): number | null {
+  const departures = trips
+    .map(trip => {
+      const firstStop = [...trip.stops].sort((a, b) => a.sequence - b.sequence)[0];
+      return firstStop ? parseGtfsTime(firstStop.departure).totalMinutes : null;
+    })
+    .filter((minutes): minutes is number => minutes !== null)
+    .filter(minutes => (mode === 'weekday' ? minutes < 18 * 60 : true))
+    .sort((a, b) => a - b);
+
+  if (departures.length < 2) return null;
+
+  const diffs: number[] = [];
+  for (let i = 1; i < departures.length; i++) {
+    const diff = departures[i] - departures[i - 1];
+    if (diff >= 10 && diff <= 180) {
+      diffs.push(diff);
+    }
+  }
+
+  return roundHeadway(median(diffs));
+}
+
+function getServiceLabel(serviceDays: DayType[]): string {
+  const hasWeekday = serviceDays.includes('weekday');
+  const hasSaturday = serviceDays.includes('saturday');
+  const hasSunday = serviceDays.includes('sunday');
+
+  if (hasWeekday && hasSaturday && hasSunday) return 'Runs daily';
+  if (!hasWeekday && hasSaturday && hasSunday) return 'Weekends only';
+  if (hasWeekday && !hasSaturday && !hasSunday) return 'Weekdays only';
+  if (!hasWeekday && hasSaturday && !hasSunday) return 'Saturday only';
+  if (!hasWeekday && !hasSaturday && hasSunday) return 'Sunday only';
+  if (hasWeekday && hasSaturday && !hasSunday) return 'No Sunday service';
+  if (hasWeekday && !hasSaturday && hasSunday) return 'No Saturday service';
+  return 'Limited service';
+}
+
+function getFrequencyLabel(schedule?: RouteSchedule): string | null {
+  if (!schedule) return null;
+
+  const weekdayHeadway = getTypicalHeadway(schedule.weekday || [], 'weekday');
+  const saturdayHeadway = getTypicalHeadway(schedule.saturday || [], 'saturday');
+  const sundayHeadway = getTypicalHeadway(schedule.sunday || [], 'sunday');
+  const weekendHeadway = saturdayHeadway ?? sundayHeadway;
+
+  if (weekdayHeadway && weekendHeadway && weekdayHeadway !== weekendHeadway) {
+    return `~${weekdayHeadway} min weekdays · ~${weekendHeadway} min weekends`;
+  }
+
+  const commonHeadway = weekdayHeadway ?? weekendHeadway;
+  return commonHeadway ? `~${commonHeadway} min typical service` : null;
+}
+
+function buildServiceNotes(
+  route: TransitRoute,
+  schedule: RouteSchedule | undefined,
+  serviceDays: DayType[]
+): string[] {
+  const notes = [getServiceLabel(serviceDays)];
+  const weekdayHeadway = schedule ? getTypicalHeadway(schedule.weekday || [], 'weekday') : null;
+  const saturdayHeadway = schedule ? getTypicalHeadway(schedule.saturday || [], 'saturday') : null;
+  const sundayHeadway = schedule ? getTypicalHeadway(schedule.sunday || [], 'sunday') : null;
+  const weekendHeadway = saturdayHeadway ?? sundayHeadway;
+
+  if (weekdayHeadway) {
+    notes.push(`Typical weekday service every ~${weekdayHeadway} minutes`);
+  }
+
+  if (weekendHeadway) {
+    notes.push(`Typical weekend service every ~${weekendHeadway} minutes`);
+  }
+
+  const totalTrips = DAY_TYPES.reduce((sum, dayType) => sum + (schedule?.[dayType]?.length || 0), 0);
+  if (totalTrips > 0 && totalTrips <= 8) {
+    notes.push('Limited scheduled trips');
+  }
+
+  notes.push(
+    route.county === 'Suffolk'
+      ? 'Official Suffolk route pages include printable schedules and rider notes'
+      : 'Official NICE schedules and rider notices are available from the Nassau agency page'
+  );
+
+  return notes;
+}
+
+function getFallbackPattern(route: TransitRoute): RoutePattern {
+  return {
+    id: `${route.id}::fallback`,
+    signature: route.stops.map(stop => stop.id).join('>'),
+    label: route.long_name,
+    stopIds: route.stops.map(stop => stop.id),
+    stops: route.stops,
+    dayTypes: [],
+    tripCount: 0,
+    tripIdsByDay: {},
+  };
+}
+
+function getPatternViaStop(stops: TransitStop[]): string | null {
+  if (stops.length < 3) return null;
+  return stops[Math.floor(stops.length / 2)]?.name || null;
+}
+
+function buildPatternLabels(patterns: RoutePattern[]): RoutePattern[] {
+  const baseCounts = new Map<string, number>();
+
+  for (const pattern of patterns) {
+    const firstStop = pattern.stops[0]?.name || 'Start';
+    const lastStop = pattern.stops[pattern.stops.length - 1]?.name || 'End';
+    const base = `${firstStop} → ${lastStop}`;
+    baseCounts.set(base, (baseCounts.get(base) || 0) + 1);
+  }
+
+  return patterns.map(pattern => {
+    const firstStop = pattern.stops[0]?.name || 'Start';
+    const lastStop = pattern.stops[pattern.stops.length - 1]?.name || 'End';
+    const base = `${firstStop} → ${lastStop}`;
+    const via = getPatternViaStop(pattern.stops);
+
+    return {
+      ...pattern,
+      label: (baseCounts.get(base) || 0) > 1 && via ? `${base} via ${via}` : base,
+    };
+  });
+}
+
+export function buildRouteDetails(route: TransitRoute, schedule?: RouteSchedule): RouteDetails {
+  const stopLookup = new Map(route.stops.map(stop => [stop.id, stop]));
+  const patternMap = new Map<string, RoutePattern>();
+  const serviceDays: DayType[] = [];
+
+  if (schedule) {
+    for (const dayType of DAY_TYPES) {
+      const trips = schedule[dayType] || [];
+      if (trips.length > 0) {
+        serviceDays.push(dayType);
+      }
+
+      for (const trip of trips) {
+        const stopIds = [...trip.stops]
+          .sort((a, b) => a.sequence - b.sequence)
+          .map(stopTime => stopTime.stop_id)
+          .filter((stopId, index, arr) => arr[index - 1] !== stopId)
+          .filter(stopId => stopLookup.has(stopId));
+
+        if (stopIds.length < 2) continue;
+
+        const signature = stopIds.join('>');
+        const existing = patternMap.get(signature);
+
+        if (existing) {
+          existing.tripCount += 1;
+          if (!existing.dayTypes.includes(dayType)) {
+            existing.dayTypes.push(dayType);
+          }
+          existing.tripIdsByDay[dayType] = [...(existing.tripIdsByDay[dayType] || []), trip.trip_id];
+        } else {
+          patternMap.set(signature, {
+            id: `${route.id}::${patternMap.size + 1}`,
+            signature,
+            label: route.long_name,
+            stopIds,
+            stops: stopIds.map(stopId => stopLookup.get(stopId)!).filter(Boolean),
+            dayTypes: [dayType],
+            tripCount: 1,
+            tripIdsByDay: { [dayType]: [trip.trip_id] },
+          });
+        }
+      }
+    }
+  }
+
+  const patterns = buildPatternLabels(
+    (patternMap.size > 0 ? [...patternMap.values()] : [getFallbackPattern(route)]).sort((a, b) => {
+      if (b.tripCount !== a.tripCount) return b.tripCount - a.tripCount;
+      return b.stops.length - a.stops.length;
+    })
+  );
+
+  const { officialUrl, officialLabel } = getOfficialRouteInfo(route);
+
+  return {
+    patterns,
+    defaultPatternId: patterns[0]?.id || null,
+    stopCount: patterns[0]?.stops.length || route.stops.length,
+    serviceDays,
+    serviceLabel: getServiceLabel(serviceDays),
+    frequencyLabel: getFrequencyLabel(schedule),
+    serviceNotes: buildServiceNotes(route, schedule, serviceDays),
+    officialUrl,
+    officialLabel,
+  };
+}
+
+export function buildRouteDetailsMap(
+  routes: TransitRoute[],
+  schedules: Record<string, RouteSchedule>
+): Record<string, RouteDetails> {
+  return Object.fromEntries(routes.map(route => [route.id, buildRouteDetails(route, schedules[route.id])]));
+}
+
+export function getActiveRoutePattern(
+  details: RouteDetails | undefined,
+  dayType: DayType,
+  preferredPatternId?: string | null
+): RoutePattern | null {
+  if (!details || details.patterns.length === 0) return null;
+
+  if (preferredPatternId) {
+    const preferred = details.patterns.find(pattern => pattern.id === preferredPatternId);
+    if (preferred) return preferred;
+  }
+
+  return details.patterns.find(pattern => pattern.dayTypes.includes(dayType))
+    || details.patterns[0]
+    || null;
 }
 
 // Format time for display
@@ -198,27 +475,35 @@ export function findRoutesForStop(
   return routes.filter(r => r.stops.some(s => s.id === stopId));
 }
 
+export function findClosestStopInSequence(
+  lat: number,
+  lon: number,
+  stops: TransitStop[]
+): { stop: TransitStop; index: number; distance: number } | null {
+  let best: TransitStop | null = null;
+  let bestIdx = -1;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < stops.length; i++) {
+    const stop = stops[i];
+    const distance = haversine(lat, lon, stop.lat, stop.lon);
+    if (distance < bestDist) {
+      best = stop;
+      bestIdx = i;
+      bestDist = distance;
+    }
+  }
+
+  return best ? { stop: best, index: bestIdx, distance: bestDist } : null;
+}
+
 // Find the closest stop on a specific route to a given point
 export function findClosestStopOnRoute(
   lat: number,
   lon: number,
   route: TransitRoute
 ): { stop: TransitStop; index: number; distance: number } | null {
-  let best: TransitStop | null = null;
-  let bestIdx = -1;
-  let bestDist = Infinity;
-
-  for (let i = 0; i < route.stops.length; i++) {
-    const s = route.stops[i];
-    const d = haversine(lat, lon, s.lat, s.lon);
-    if (d < bestDist) {
-      bestDist = d;
-      best = s;
-      bestIdx = i;
-    }
-  }
-
-  return best ? { stop: best, index: bestIdx, distance: bestDist } : null;
+  return findClosestStopInSequence(lat, lon, route.stops);
 }
 
 // Estimate walking time in minutes (average 3 mph walking speed)

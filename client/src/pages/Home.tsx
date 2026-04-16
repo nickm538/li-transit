@@ -9,7 +9,7 @@ import NavHeader from '@/components/NavHeader';
 import RouteSidebar from '@/components/RouteSidebar';
 import RouteDetail from '@/components/RouteDetail';
 import { useTransit } from '@/contexts/TransitContext';
-import { LI_CENTER } from '@/lib/transitData';
+import { getActiveRoutePattern, getDayType, LI_CENTER } from '@/lib/transitData';
 import { Loader2, Bus, RotateCcw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { SidebarProvider, SidebarToggleButton } from '@/components/MobileSidebarToggle';
@@ -19,8 +19,17 @@ export default function Home() {
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
-  const { routes, routeColors, loading, selectedRoute, setSelectedRoute } = useTransit();
+  const {
+    routes,
+    routeColors,
+    routeDetailsById,
+    loading,
+    selectedRoute,
+    selectedRoutePatternId,
+    setSelectedRoute,
+  } = useTransit();
   const [mapReady, setMapReady] = useState(false);
+  const dayType = getDayType();
 
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
@@ -134,8 +143,10 @@ export default function Home() {
     if (!selectedRoute) return;
 
     const color = routeColors.get(selectedRoute.id) || '#6a9bcc';
+    const activePattern = getActiveRoutePattern(routeDetailsById[selectedRoute.id], dayType, selectedRoutePatternId);
+    const displayedStops = activePattern?.stops || selectedRoute.stops;
 
-    selectedRoute.stops.forEach((stop, i) => {
+    displayedStops.forEach((stop, i) => {
       const el = document.createElement('div');
       el.style.width = '14px';
       el.style.height = '14px';
@@ -229,9 +240,9 @@ export default function Home() {
 
     // AUTO-ZOOM: Use the STOPS as bounds (more reliable than shape data)
     // This ensures the map zooms directly to where the route's stops actually are
-    if (selectedRoute.stops.length > 0) {
+    if (displayedStops.length > 0) {
       const bounds = new google.maps.LatLngBounds();
-      selectedRoute.stops.forEach(stop => {
+      displayedStops.forEach(stop => {
         bounds.extend({ lat: stop.lat, lng: stop.lon });
       });
       // Also include shape points for complete coverage
@@ -245,7 +256,7 @@ export default function Home() {
         : { top: 80, bottom: 40, left: 340, right: 420 }
       );
     }
-  }, [mapReady, selectedRoute, routeColors]);
+  }, [dayType, mapReady, routeDetailsById, routeColors, selectedRoute, selectedRoutePatternId]);
 
   return (
     <SidebarProvider>

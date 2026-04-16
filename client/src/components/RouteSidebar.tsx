@@ -13,7 +13,7 @@ import { Search, ChevronRight, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function RouteSidebar() {
-  const { routes, routeColors, selectedRoute, setSelectedRoute } = useTransit();
+  const { routes, routeColors, routeDetailsById, selectedRoute, setSelectedRoute } = useTransit();
   const [search, setSearch] = useState('');
   const [countyFilter, setCountyFilter] = useState<'all' | 'Suffolk' | 'Nassau'>('all');
   const { isOpen } = useSidebar();
@@ -118,6 +118,7 @@ export default function RouteSidebar() {
                   <RouteItem
                     key={route.id}
                     route={route}
+                    stopCount={routeDetailsById[route.id]?.stopCount || route.stops.length}
                     color={routeColors.get(route.id) || '#00D4FF'}
                     isSelected={selectedRoute?.id === route.id}
                     onClick={() => setSelectedRoute(selectedRoute?.id === route.id ? null : route)}
@@ -142,6 +143,7 @@ export default function RouteSidebar() {
                   <RouteItem
                     key={route.id}
                     route={route}
+                    stopCount={routeDetailsById[route.id]?.stopCount || route.stops.length}
                     color={routeColors.get(route.id) || '#FFB020'}
                     isSelected={selectedRoute?.id === route.id}
                     onClick={() => setSelectedRoute(selectedRoute?.id === route.id ? null : route)}
@@ -165,12 +167,14 @@ export default function RouteSidebar() {
 
 function RouteItem({
   route,
+  stopCount,
   color,
   isSelected,
   onClick,
   index,
 }: {
   route: any;
+  stopCount: number;
   color: string;
   isSelected: boolean;
   onClick: () => void;
@@ -216,7 +220,7 @@ function RouteItem({
       <div className="flex-1 min-w-0">
         <div className="text-xs text-foreground truncate">{route.long_name}</div>
         <div className="text-[10px] text-muted-foreground font-mono">
-          {route.stops.length} stops
+          {stopCount} stops
         </div>
       </div>
 

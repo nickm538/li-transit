@@ -13,12 +13,12 @@ import { useTransit } from '@/contexts/TransitContext';
 import {
   LI_CENTER, LI_BOUNDS,
   haversine, getDayType, formatTime, parseGtfsTime,
-  findNearestStops, findClosestStopOnRoute, findRoutesForStop,
+  findNearestStops, findClosestStopInSequence,
   estimateWalkTime, estimateBikeTime, isWalkable, isBikeable,
   getCurrentMinutes, formatDuration, formatDistance,
   sliceRouteShape,
 } from '@/lib/transitData';
-import type { TransitRoute, TransitStop, RouteSchedule, TripSchedule } from '@/lib/transitData';
+import type { TransitRoute, TransitStop } from '@/lib/transitData';
 import { Button } from '@/components/ui/button';
 import {
   MapPin, Navigation, Crosshair, Search, ArrowRight, Clock,
@@ -70,7 +70,7 @@ export default function TripPlanner() {
   const originCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const destCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  const { routes, routeColors, schedules, loading, schedulesLoading } = useTransit();
+  const { routes, routeColors, routeDetailsById, schedules, loading, schedulesLoading } = useTransit();
 
   const [originText, setOriginText] = useState('');
   const [destText, setDestText] = useState('');
@@ -366,41 +366,62 @@ export default function TripPlanner() {
       const dayType = getDayType();
       const nowMinutes = getCurrentMinutes();
       const directDist = haversine(origin.lat, origin.lng, dest.lat, dest.lng);
+      const patternCandidates = routes.flatMap(route => {
+        const details = routeDetailsById[route.id];
+        const scheduledPatterns = details?.patterns.filter(pattern => pattern.dayTypes.includes(dayType)) || [];
+        const patterns = scheduledPatterns.length > 0
+          ? scheduledPatterns
+          : (details?.patterns.length ? details.patterns : [{
+            id: `${route.id}::fallback`,
+            label: route.long_name,
+            stops: route.stops,
+            tripIdsByDay: {},
+          }]);
+
+        return patterns.map(pattern => ({
+          route,
+          patternId: pattern.id,
+          patternLabel: pattern.label,
+          stops: pattern.stops,
+          tripIds: new Set(pattern.tripIdsByDay?.[dayType] || []),
+        }));
+      });
+      const patternsForStop = (stopId: string) =>
+        patternCandidates.filter(pattern => pattern.stops.some(stop => stop.id === stopId));
 
       // Find nearby stops for origin and destination (wider radius)
       const nearOriginStops = findNearestStops(origin.lat, origin.lng, allStops, 15, 5);
-      const nearDestStops = findNearestStops(dest.lat, dest.lng, allStops, 15, 5);
 
       const tripResults: TripResult[] = [];
       const seenRouteKeys = new Set<string>();
 
       // ---- STRATEGY 1: Direct routes ----
-      for (const route of routes) {
-        const originMatch = findClosestStopOnRoute(origin.lat, origin.lng, route);
-        const destMatch = findClosestStopOnRoute(dest.lat, dest.lng, route);
+      for (const pattern of patternCandidates) {
+        const originMatch = findClosestStopInSequence(origin.lat, origin.lng, pattern.stops);
+        const destMatch = findClosestStopInSequence(dest.lat, dest.lng, pattern.stops);
 
         if (!originMatch || !destMatch) continue;
-        if (originMatch.index === destMatch.index) continue;
+        if (originMatch.index >= destMatch.index) continue;
         if (originMatch.distance > 1.5 || destMatch.distance > 1.5) continue;
 
-        const routeKey = `direct-${route.id}-${originMatch.stop.id}-${destMatch.stop.id}`;
+        const routeKey = `direct-${pattern.route.id}-${pattern.patternId}-${originMatch.stop.id}-${destMatch.stop.id}`;
         if (seenRouteKeys.has(routeKey)) continue;
         seenRouteKeys.add(routeKey);
 
-        const color = routeColors.get(route.id) || '#00D4FF';
-        const stopsCount = Math.abs(destMatch.index - originMatch.index);
+        const color = routeColors.get(pattern.route.id) || '#00D4FF';
+        const stopsCount = destMatch.index - originMatch.index;
 
         // Get stops between boarding and alighting
-        const startIdx = Math.min(originMatch.index, destMatch.index);
-        const endIdx = Math.max(originMatch.index, destMatch.index);
-        const stopsBetween = route.stops.slice(startIdx, endIdx + 1);
+        const stopsBetween = pattern.stops.slice(originMatch.index, destMatch.index + 1);
 
-        const routeSched = schedules[route.id];
+        const routeSched = schedules[pattern.route.id];
         let bestTrip: { dep: string; arr: string; depMin: number; arrMin: number } | null = null;
 
         if (routeSched) {
           const trips = routeSched[dayType] || [];
           for (const trip of trips) {
+            if (pattern.tripIds.size > 0 && !pattern.tripIds.has(trip.trip_id)) continue;
+
             const originStopTime = trip.stops.find(s => s.stop_id === originMatch.stop.id);
             const destStopTime = trip.stops.find(s => s.stop_id === destMatch.stop.id);
 
@@ -443,7 +464,7 @@ export default function TripPlanner() {
 
         segments.push({
           type: 'bus',
-          route,
+          route: pattern.route,
           fromStop: originMatch.stop,
           toStop: destMatch.stop,
           fromName: originMatch.stop.name,
@@ -476,49 +497,44 @@ export default function TripPlanner() {
           totalDuration,
           departureTime: bestTrip?.dep || '',
           arrivalTime: bestTrip?.arr || '',
-          label: `Route ${route.short_name}`,
+          label: `Route ${pattern.route.short_name}${pattern.patternLabel ? ` · ${pattern.patternLabel}` : ''}`,
         });
       }
 
       // ---- STRATEGY 2: Transfer routes ----
       if (tripResults.length < 3) {
         for (const nearOrig of nearOriginStops.slice(0, 8)) {
-          const origRoutes = findRoutesForStop(nearOrig.stop.id, routes);
+          const origPatterns = patternsForStop(nearOrig.stop.id);
 
-          for (const origRoute of origRoutes) {
-            const origStopIdx = origRoute.stops.findIndex(s => s.id === nearOrig.stop.id);
+          for (const origPattern of origPatterns) {
+            const origStopIdx = origPattern.stops.findIndex(s => s.id === nearOrig.stop.id);
             if (origStopIdx < 0) continue;
 
-            for (let ti = 0; ti < origRoute.stops.length; ti += 1) {
-              if (ti === origStopIdx) continue;
-              const transferStop = origRoute.stops[ti];
+            for (let ti = origStopIdx + 1; ti < origPattern.stops.length; ti += 1) {
+              const transferStop = origPattern.stops[ti];
 
-              const transferRoutes = findRoutesForStop(transferStop.id, routes);
+              const transferPatterns = patternsForStop(transferStop.id);
 
-              for (const destRoute of transferRoutes) {
-                if (destRoute.id === origRoute.id) continue;
+              for (const destPattern of transferPatterns) {
+                if (destPattern.route.id === origPattern.route.id) continue;
 
-                const destMatch = findClosestStopOnRoute(dest.lat, dest.lng, destRoute);
+                const destMatch = findClosestStopInSequence(dest.lat, dest.lng, destPattern.stops);
                 if (!destMatch || destMatch.distance > 1.5) continue;
+                const transferStopIdx = destPattern.stops.findIndex(s => s.id === transferStop.id);
+                if (transferStopIdx < 0 || transferStopIdx >= destMatch.index) continue;
 
-                const routeKey = `transfer-${origRoute.id}-${destRoute.id}-${transferStop.id}`;
+                const routeKey = `transfer-${origPattern.route.id}-${origPattern.patternId}-${destPattern.route.id}-${destPattern.patternId}-${transferStop.id}`;
                 if (seenRouteKeys.has(routeKey)) continue;
                 seenRouteKeys.add(routeKey);
 
-                const color1 = routeColors.get(origRoute.id) || '#00D4FF';
-                const color2 = routeColors.get(destRoute.id) || '#FFB020';
-                const stopsCount1 = Math.abs(ti - origStopIdx);
-                const transferStopIdx = destRoute.stops.findIndex(s => s.id === transferStop.id);
-                const stopsCount2 = transferStopIdx >= 0 ? Math.abs(destMatch.index - transferStopIdx) : 5;
+                const color1 = routeColors.get(origPattern.route.id) || '#00D4FF';
+                const color2 = routeColors.get(destPattern.route.id) || '#FFB020';
+                const stopsCount1 = ti - origStopIdx;
+                const stopsCount2 = destMatch.index - transferStopIdx;
 
                 // Get stops between for each leg
-                const leg1Start = Math.min(origStopIdx, ti);
-                const leg1End = Math.max(origStopIdx, ti);
-                const stopsBetween1 = origRoute.stops.slice(leg1Start, leg1End + 1);
-
-                const leg2Start = Math.min(transferStopIdx >= 0 ? transferStopIdx : 0, destMatch.index);
-                const leg2End = Math.max(transferStopIdx >= 0 ? transferStopIdx : 0, destMatch.index);
-                const stopsBetween2 = destRoute.stops.slice(leg2Start, leg2End + 1);
+                const stopsBetween1 = origPattern.stops.slice(origStopIdx, ti + 1);
+                const stopsBetween2 = destPattern.stops.slice(transferStopIdx, destMatch.index + 1);
 
                 const segments: TripSegment[] = [];
 
@@ -534,7 +550,7 @@ export default function TripPlanner() {
 
                 segments.push({
                   type: 'bus',
-                  route: origRoute,
+                  route: origPattern.route,
                   fromStop: nearOrig.stop,
                   toStop: transferStop,
                   fromName: nearOrig.stop.name,
@@ -557,7 +573,7 @@ export default function TripPlanner() {
 
                 segments.push({
                   type: 'bus',
-                  route: destRoute,
+                  route: destPattern.route,
                   fromStop: transferStop,
                   toStop: destMatch.stop,
                   fromName: transferStop.name,
@@ -588,7 +604,7 @@ export default function TripPlanner() {
                   totalDuration,
                   departureTime: '',
                   arrivalTime: '',
-                  label: `${origRoute.short_name} → ${destRoute.short_name}`,
+                  label: `${origPattern.route.short_name} → ${destPattern.route.short_name}`,
                 });
               }
             }
@@ -666,7 +682,7 @@ export default function TripPlanner() {
     } finally {
       setSearching(false);
     }
-  }, [originCoords, destCoords, originText, destText, routes, routeColors, schedules, allStops, geocodeAddress]);
+  }, [originCoords, destCoords, originText, destText, routes, routeColors, routeDetailsById, schedules, allStops, geocodeAddress]);
 
   // ============================================================
   // MAP VISUALIZATION — draw route on map when result is selected
