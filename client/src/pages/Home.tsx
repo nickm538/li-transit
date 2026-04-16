@@ -287,8 +287,8 @@ export default function Home() {
           )}
         </AnimatePresence>
 
-        {/* Map — fills entire viewport, fully interactive */}
-        <div className="map-container">
+        {/* Map — fills entire viewport below nav, fully interactive */}
+        <div className="absolute inset-0 top-14 map-container">
           <MapView
             className="w-full h-full"
             initialCenter={LI_CENTER}

@@ -35,12 +35,9 @@ function loadMapScript(): Promise<void> {
     script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry,routes`;
     script.async = true;
     script.crossOrigin = "anonymous";
-    script.onload = () => {
-      resolve();
-    };
+    script.onload = () => resolve();
     script.onerror = () => {
       console.error("Failed to load Google Maps script");
-      // Retry once
       window._mapsLoading = undefined;
       setTimeout(() => {
         const retryScript = document.createElement("script");
@@ -96,7 +93,6 @@ export function MapView({
     } catch (error) {
       console.error("Google Maps failed to initialize:", error);
       setMapError(true);
-      // Allow retry by clearing the cached promise
       window._mapsLoading = undefined;
     }
   });
@@ -108,8 +104,8 @@ export function MapView({
   return (
     <div
       ref={mapContainer}
-      data-map-canvas="true"
       className={cn("w-full h-full", className)}
+      style={{ minHeight: '100%', minWidth: '100%' }}
     >
       {mapError && (
         <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
@@ -128,6 +124,7 @@ export function MapView({
           <button
             onClick={() => {
               setMapError(false);
+              map.current = null;
               init();
             }}
             className="mt-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors hover:opacity-80"

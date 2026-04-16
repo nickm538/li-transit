@@ -292,17 +292,16 @@ body {
   bottom: 0;
 }
 
-/* CRITICAL: Map container fills viewport and lets Google Maps handle all touch/drag */
+/* CRITICAL: Map container — lets Google Maps handle all touch/drag */
 .map-container {
-  position: absolute;
-  inset: 0;
-  /* Do NOT set touch-action: none — Google Maps needs to handle its own gestures */
+  width: 100%;
+  height: 100%;
   touch-action: auto;
   -webkit-user-select: none;
   user-select: none;
   overflow: hidden;
 }
-.map-container > [data-map-canvas="true"] {
+.map-container > div {
   width: 100% !important;
   height: 100% !important;
 }
