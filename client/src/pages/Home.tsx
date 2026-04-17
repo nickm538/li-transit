@@ -263,13 +263,30 @@ export default function Home() {
         );
       }
       const isMobile = window.innerWidth < 768;
-      // Use generous padding to ensure the route is well-centered and visible
-      mapRef.current.fitBounds(
-        bounds,
-        isMobile
-          ? { top: 80, bottom: 60, left: 20, right: 20 }
-          : { top: 80, bottom: 40, left: 340, right: 420 }
-      );
+      const padding = isMobile
+        ? { top: 80, bottom: 60, left: 20, right: 20 }
+        : { top: 80, bottom: 40, left: 340, right: 420 };
+      // Defer fitBounds until after the current render commits so the map
+      // has finished processing the polyline/marker updates from the same
+      // render cycle. Without this, the very first selection can race with
+      // the 138+ polylines being (re)added and fitBounds ends up using
+      // stale projection state — causing the map to zoom to an unrelated
+      // part of Long Island until a subsequent click resettles it.
+      const targetMap = mapRef.current;
+      const targetRouteId = selectedRoute.id;
+      let raf2: number | null = null;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          // Bail out if the selection changed in the meantime
+          if (!mapRef.current || mapRef.current !== targetMap) return;
+          if (selectedRoute?.id !== targetRouteId) return;
+          targetMap.fitBounds(bounds, padding);
+        });
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        if (raf2 !== null) cancelAnimationFrame(raf2);
+      };
     }
   }, [
     dayType,
