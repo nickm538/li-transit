@@ -38,6 +38,12 @@ export default function Home() {
   const [mapReady, setMapReady] = useState(false);
   const dayType = getDayType();
 
+  // Ref mirror of selectedRoute?.id — updated on every render so that deferred
+  // callbacks (e.g. the fitBounds RAF below) can detect a selection change
+  // that happened after the effect captured its closure.
+  const selectedRouteIdRef = useRef<string | null>(null);
+  selectedRouteIdRef.current = selectedRoute?.id ?? null;
+
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     map.setOptions({
@@ -277,9 +283,12 @@ export default function Home() {
       let raf2: number | null = null;
       const raf1 = requestAnimationFrame(() => {
         raf2 = requestAnimationFrame(() => {
-          // Bail out if the selection changed in the meantime
+          // Bail out if the selection changed (or was cleared) in the
+          // meantime. We compare against the ref rather than the captured
+          // `selectedRoute` — the captured closure value is always equal to
+          // `targetRouteId`, so only the ref reflects the current state.
           if (!mapRef.current || mapRef.current !== targetMap) return;
-          if (selectedRoute?.id !== targetRouteId) return;
+          if (selectedRouteIdRef.current !== targetRouteId) return;
           targetMap.fitBounds(bounds, padding);
         });
       });
