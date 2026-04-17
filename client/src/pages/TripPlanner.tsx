@@ -213,6 +213,30 @@ export default function TripPlanner() {
     []
   );
 
+  // Reset all trip planner state and return the map to the LI default view.
+  // Shared between the inline Clear button in the panel and the floating
+  // Reset View button shown on the map.
+  const handleReset = useCallback(() => {
+    setOriginText("");
+    setOriginCoords(null);
+    setDestText("");
+    setDestCoords(null);
+    setResults([]);
+    setSelectedResult(null);
+    setDropMode(null);
+    if (originInputRef.current) originInputRef.current.value = "";
+    if (destInputRef.current) destInputRef.current.value = "";
+    markersRef.current.forEach(m => (m.map = null));
+    markersRef.current = [];
+    polylinesRef.current.forEach(p => p.setMap(null));
+    polylinesRef.current = [];
+    if (infoWindowRef.current) infoWindowRef.current.close();
+    if (mapRef.current) {
+      mapRef.current.panTo(LI_CENTER);
+      mapRef.current.setZoom(10);
+    }
+  }, []);
+
   const handleMapReady = useCallback(
     (map: google.maps.Map) => {
       mapRef.current = map;
@@ -223,8 +247,14 @@ export default function TripPlanner() {
       map.setOptions({
         mapTypeControl: false,
         streetViewControl: true,
+        streetViewControlOptions: {
+          position: google.maps.ControlPosition.LEFT_BOTTOM,
+        },
         fullscreenControl: false,
         zoomControl: true,
+        zoomControlOptions: {
+          position: google.maps.ControlPosition.LEFT_BOTTOM,
+        },
         gestureHandling: "greedy",
         minZoom: 9,
         maxZoom: 20,
@@ -1315,6 +1345,38 @@ export default function TripPlanner() {
         </div>
       </div>
 
+      {/* Floating Reset View button — matches Explore tab styling */}
+      <AnimatePresence>
+        {(originText ||
+          destText ||
+          originCoords ||
+          destCoords ||
+          results.length > 0) && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            onClick={handleReset}
+            // Mobile offset (156px) clears the collapsed bottom-sheet
+            // (max-h-[140px]) with a small gap; desktop sits at bottom-left.
+            className="fixed z-40 glass-panel rounded-full px-4 py-2.5 flex items-center gap-2 hover:bg-white/10 transition-colors bottom-[156px] left-1/2 -translate-x-1/2 md:bottom-6 md:left-6 md:translate-x-0"
+            style={{ borderColor: "rgba(217,119,87,0.2)" }}
+            title="Clear trip & reset view"
+          >
+            <RotateCcw className="w-4 h-4" style={{ color: "#d97757" }} />
+            <span
+              className="text-xs font-medium"
+              style={{
+                fontFamily: "'Space Grotesk', system-ui, sans-serif",
+                color: "#faf9f5",
+              }}
+            >
+              Reset View
+            </span>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Trip planner panel — side panel on desktop, bottom sheet on mobile */}
       <div
         className={`
@@ -1540,28 +1602,7 @@ export default function TripPlanner() {
             </Button>
             {(originText || destText || results.length > 0) && (
               <Button
-                onClick={() => {
-                  setOriginText("");
-                  setOriginCoords(null);
-                  setDestText("");
-                  setDestCoords(null);
-                  setResults([]);
-                  setSelectedResult(null);
-                  setDropMode(null);
-                  if (originInputRef.current) originInputRef.current.value = "";
-                  if (destInputRef.current) destInputRef.current.value = "";
-                  // Clear map markers and polylines
-                  markersRef.current.forEach(m => (m.map = null));
-                  markersRef.current = [];
-                  polylinesRef.current.forEach(p => p.setMap(null));
-                  polylinesRef.current = [];
-                  if (infoWindowRef.current) infoWindowRef.current.close();
-                  // Reset map view
-                  if (mapRef.current) {
-                    mapRef.current.panTo(LI_CENTER);
-                    mapRef.current.setZoom(10);
-                  }
-                }}
+                onClick={handleReset}
                 variant="outline"
                 className="h-10 px-3 rounded-lg border-border/50 hover:bg-white/5"
                 title="Clear all & reset"

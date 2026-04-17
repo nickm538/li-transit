@@ -38,6 +38,12 @@ export default function Home() {
   const [mapReady, setMapReady] = useState(false);
   const dayType = getDayType();
 
+  // Ref mirror of selectedRoute?.id — updated on every render so that deferred
+  // callbacks (e.g. the fitBounds RAF below) can detect a selection change
+  // that happened after the effect captured its closure.
+  const selectedRouteIdRef = useRef<string | null>(null);
+  selectedRouteIdRef.current = selectedRoute?.id ?? null;
+
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     map.setOptions({
@@ -263,13 +269,33 @@ export default function Home() {
         );
       }
       const isMobile = window.innerWidth < 768;
-      // Use generous padding to ensure the route is well-centered and visible
-      mapRef.current.fitBounds(
-        bounds,
-        isMobile
-          ? { top: 80, bottom: 60, left: 20, right: 20 }
-          : { top: 80, bottom: 40, left: 340, right: 420 }
-      );
+      const padding = isMobile
+        ? { top: 80, bottom: 60, left: 20, right: 20 }
+        : { top: 80, bottom: 40, left: 340, right: 420 };
+      // Defer fitBounds until after the current render commits so the map
+      // has finished processing the polyline/marker updates from the same
+      // render cycle. Without this, the very first selection can race with
+      // the 138+ polylines being (re)added and fitBounds ends up using
+      // stale projection state — causing the map to zoom to an unrelated
+      // part of Long Island until a subsequent click resettles it.
+      const targetMap = mapRef.current;
+      const targetRouteId = selectedRoute.id;
+      let raf2: number | null = null;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          // Bail out if the selection changed (or was cleared) in the
+          // meantime. We compare against the ref rather than the captured
+          // `selectedRoute` — the captured closure value is always equal to
+          // `targetRouteId`, so only the ref reflects the current state.
+          if (!mapRef.current || mapRef.current !== targetMap) return;
+          if (selectedRouteIdRef.current !== targetRouteId) return;
+          targetMap.fitBounds(bounds, padding);
+        });
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        if (raf2 !== null) cancelAnimationFrame(raf2);
+      };
     }
   }, [
     dayType,

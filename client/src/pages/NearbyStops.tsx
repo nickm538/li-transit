@@ -177,6 +177,29 @@ export default function NearbyStops() {
     toast.success(`Found ${nearbyResults.length} nearby stop${nearbyResults.length > 1 ? 's' : ''}!`);
   }, [allStops, routes, routeColors, schedules]);
 
+  // Reset all nearby-stops state and return the map to the LI default view.
+  // Shared between the inline Clear button in the panel and the floating
+  // Reset View button shown on the map.
+  const handleReset = useCallback(() => {
+    setLocationText("");
+    setLocationCoords(null);
+    setResults([]);
+    setSelectedStopIdx(null);
+    setDropMode(false);
+    if (inputRef.current) inputRef.current.value = "";
+    markersRef.current.forEach(m => (m.map = null));
+    markersRef.current = [];
+    polylinesRef.current.forEach(p => p.setMap(null));
+    polylinesRef.current = [];
+    walkPolylinesRef.current.forEach(p => p.setMap(null));
+    walkPolylinesRef.current = [];
+    if (infoWindowRef.current) infoWindowRef.current.close();
+    if (mapRef.current) {
+      mapRef.current.panTo(LI_CENTER);
+      mapRef.current.setZoom(10);
+    }
+  }, []);
+
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     geocoderRef.current = new google.maps.Geocoder();
@@ -186,8 +209,14 @@ export default function NearbyStops() {
     map.setOptions({
       mapTypeControl: false,
       streetViewControl: true,
+      streetViewControlOptions: {
+        position: google.maps.ControlPosition.LEFT_BOTTOM,
+      },
       fullscreenControl: false,
       zoomControl: true,
+      zoomControlOptions: {
+        position: google.maps.ControlPosition.LEFT_BOTTOM,
+      },
       gestureHandling: 'greedy',
       minZoom: 9,
       maxZoom: 20,
@@ -570,6 +599,34 @@ export default function NearbyStops() {
         </div>
       )}
 
+      {/* Floating Reset View button — matches Explore tab styling */}
+      <AnimatePresence>
+        {(locationText || locationCoords || results.length > 0) && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            onClick={handleReset}
+            // Mobile offset (136px) clears the collapsed bottom-sheet
+            // (max-h-[120px]) with a small gap; desktop sits at bottom-left.
+            className="fixed z-40 glass-panel rounded-full px-4 py-2.5 flex items-center gap-2 hover:bg-white/10 transition-colors bottom-[136px] left-1/2 -translate-x-1/2 md:bottom-6 md:left-6 md:translate-x-0"
+            style={{ borderColor: "rgba(217,119,87,0.2)" }}
+            title="Clear selection & reset view"
+          >
+            <RotateCcw className="w-4 h-4" style={{ color: "#d97757" }} />
+            <span
+              className="text-xs font-medium"
+              style={{
+                fontFamily: "'Space Grotesk', system-ui, sans-serif",
+                color: "#faf9f5",
+              }}
+            >
+              Reset View
+            </span>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Panel — bottom sheet on mobile, side panel on desktop */}
       <div
         className={`
@@ -658,23 +715,7 @@ export default function NearbyStops() {
           {/* Clear/Reset button */}
           {(locationText || locationCoords || results.length > 0) && (
             <button
-              onClick={() => {
-                setLocationText(''); setLocationCoords(null);
-                setResults([]); setSelectedStopIdx(null);
-                setDropMode(false);
-                if (inputRef.current) inputRef.current.value = '';
-                markersRef.current.forEach(m => (m.map = null));
-                markersRef.current = [];
-                polylinesRef.current.forEach(p => p.setMap(null));
-                polylinesRef.current = [];
-                walkPolylinesRef.current.forEach(p => p.setMap(null));
-                walkPolylinesRef.current = [];
-                if (infoWindowRef.current) infoWindowRef.current.close();
-                if (mapRef.current) {
-                  mapRef.current.panTo(LI_CENTER);
-                  mapRef.current.setZoom(10);
-                }
-              }}
+              onClick={handleReset}
               className="flex items-center gap-1.5 mt-2 ml-5 px-2.5 py-1.5 rounded-md text-[10px] transition-colors hover:bg-white/5"
               style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", color: '#b0aea5', border: '1px solid rgba(255,255,255,0.08)' }}
             >
