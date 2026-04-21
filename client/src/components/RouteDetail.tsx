@@ -24,7 +24,6 @@ import {
 export default function RouteDetail() {
   const {
     selectedRoute,
-    selectedRoutePatternId,
     setSelectedRoute,
     schedules,
     routeColors,
@@ -44,22 +43,12 @@ export default function RouteDetail() {
   const routeDetails = selectedRoute
     ? routeDetailsById[selectedRoute.id]
     : undefined;
-  const activePattern = getActiveRoutePattern(
-    routeDetails,
-    dayType,
-    selectedRoutePatternId
-  );
+  const activePattern = getActiveRoutePattern(routeDetails, dayType, null);
 
   const routeSchedule = useMemo(() => {
     if (!selectedRoute) return [];
     const schedule = schedules[selectedRoute.id]?.[dayType] || [];
-    const selectedPatternHasNoTripsToday =
-      selectedRoutePatternId !== null &&
-      selectedRoutePatternId === activePattern?.id &&
-      !activePattern?.tripIdsByDay[dayType];
-    const allowedTripIds =
-      activePattern?.tripIdsByDay[dayType] ??
-      (selectedPatternHasNoTripsToday ? [] : undefined);
+    const allowedTripIds = activePattern?.tripIdsByDay[dayType];
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
@@ -74,13 +63,7 @@ export default function RouteDetail() {
         return hours * 60 + minutes >= nowMinutes - 30;
       })
       .slice(0, 10);
-  }, [
-    activePattern,
-    dayType,
-    schedules,
-    selectedRoute,
-    selectedRoutePatternId,
-  ]);
+  }, [activePattern, dayType, schedules, selectedRoute]);
 
   if (!selectedRoute) return null;
 

@@ -32,7 +32,6 @@ export default function Home() {
     routeDetailsById,
     loading,
     selectedRoute,
-    selectedRoutePatternId,
     setSelectedRoute,
   } = useTransit();
   const [mapReady, setMapReady] = useState(false);
@@ -159,7 +158,7 @@ export default function Home() {
     const activePattern = getActiveRoutePattern(
       routeDetailsById[selectedRoute.id],
       dayType,
-      selectedRoutePatternId
+      null
     );
     const displayedStops = activePattern?.stops || selectedRoute.stops;
 
@@ -298,6 +297,7 @@ export default function Home() {
       // Wait until the map finishes its current frame/tile work so fitBounds
       // uses a valid projection (avoids first-click jump to the wrong region).
       let idleListener: google.maps.MapsEventListener | null = null;
+      let fallbackTimer: number | null = null;
       let cancelled = false;
       const scheduleFit = () => {
         if (cancelled) return;
@@ -306,6 +306,10 @@ export default function Home() {
           "idle",
           () => {
             idleListener = null;
+            if (fallbackTimer !== null) {
+              window.clearTimeout(fallbackTimer);
+              fallbackTimer = null;
+            }
             runFit();
           }
         );
@@ -316,7 +320,8 @@ export default function Home() {
         raf2 = requestAnimationFrame(scheduleFit);
       });
 
-      const fallbackTimer = window.setTimeout(() => {
+      fallbackTimer = window.setTimeout(() => {
+        fallbackTimer = null;
         if (cancelled) return;
         if (idleListener) {
           google.maps.event.removeListener(idleListener);
@@ -329,7 +334,7 @@ export default function Home() {
         cancelled = true;
         cancelAnimationFrame(raf1);
         if (raf2 !== null) cancelAnimationFrame(raf2);
-        window.clearTimeout(fallbackTimer);
+        if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
         if (idleListener) google.maps.event.removeListener(idleListener);
       };
     }
@@ -339,7 +344,6 @@ export default function Home() {
     routeDetailsById,
     routeColors,
     selectedRoute,
-    selectedRoutePatternId,
   ]);
 
   return (

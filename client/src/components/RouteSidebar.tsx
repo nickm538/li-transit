@@ -19,7 +19,6 @@ export default function RouteSidebar() {
     routeColors,
     routeDetailsById,
     selectedRoute,
-    selectedRoutePatternId,
     setSelectedRoute,
   } = useTransit();
   const [search, setSearch] = useState("");
@@ -46,19 +45,13 @@ export default function RouteSidebar() {
         const activePattern = getActiveRoutePattern(
           routeDetailsById[route.id],
           dayType,
-          selectedRoute?.id === route.id ? selectedRoutePatternId : null
+          null
         );
 
         return [route.id, activePattern?.stops.length || route.stops.length];
       })
     );
-  }, [
-    dayType,
-    routeDetailsById,
-    routes,
-    selectedRoute?.id,
-    selectedRoutePatternId,
-  ]);
+  }, [dayType, routeDetailsById, routes]);
 
   const suffolkRoutes = filtered.filter(r => r.county === "Suffolk");
   const nassauRoutes = filtered.filter(r => r.county === "Nassau");

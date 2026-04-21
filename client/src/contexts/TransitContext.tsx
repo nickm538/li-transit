@@ -27,9 +27,7 @@ interface TransitState {
   schedulesLoading: boolean;
   error: string | null;
   selectedRoute: TransitRoute | null;
-  selectedRoutePatternId: string | null;
   setSelectedRoute: (route: TransitRoute | null) => void;
-  setSelectedRoutePatternId: (patternId: string | null) => void;
   lastUpdated: string | null;
 }
 
@@ -49,9 +47,6 @@ export function TransitProvider({ children }: { children: ReactNode }) {
   const [schedulesLoading, setSchedulesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<TransitRoute | null>(null);
-  const [selectedRoutePatternId, setSelectedRoutePatternId] = useState<
-    string | null
-  >(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,12 +55,14 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         setLoading(true);
         setError(null);
 
-        // Load routes, network, AND schedules in parallel — schedules are critical for routing
+        // Load routes, network, AND schedules in parallel — schedules are critical for routing.
+        // The stops catalog is optional (used only to resolve missing stop ids); a network
+        // failure on it must not fail the whole load, so catch its rejection individually.
         const [routesRes, networkRes, schedulesRes, stopsRes] = await Promise.all([
           fetch(DATA_URLS.routes),
           fetch(DATA_URLS.network),
           fetch(DATA_URLS.schedules),
-          fetch(DATA_URLS.stops),
+          fetch(DATA_URLS.stops).catch(() => null),
         ]);
 
         if (!routesRes.ok || !networkRes.ok) {
@@ -76,8 +73,12 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         const networkData: NetworkData = await networkRes.json();
 
         let stopsCatalog: StopsCatalog | null = null;
-        if (stopsRes.ok) {
-          stopsCatalog = (await stopsRes.json()) as StopsCatalog;
+        if (stopsRes && stopsRes.ok) {
+          try {
+            stopsCatalog = (await stopsRes.json()) as StopsCatalog;
+          } catch {
+            stopsCatalog = null;
+          }
         }
 
         // Parse schedules
@@ -126,12 +127,7 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         schedulesLoading,
         error,
         selectedRoute,
-        selectedRoutePatternId,
-        setSelectedRoute: route => {
-          setSelectedRoute(route);
-          setSelectedRoutePatternId(null);
-        },
-        setSelectedRoutePatternId,
+        setSelectedRoute,
         lastUpdated,
       }}
     >
