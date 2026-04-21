@@ -24,9 +24,7 @@ import {
 export default function RouteDetail() {
   const {
     selectedRoute,
-    selectedRoutePatternId,
     setSelectedRoute,
-    setSelectedRoutePatternId,
     schedules,
     routeColors,
     routeDetailsById,
@@ -45,22 +43,12 @@ export default function RouteDetail() {
   const routeDetails = selectedRoute
     ? routeDetailsById[selectedRoute.id]
     : undefined;
-  const activePattern = getActiveRoutePattern(
-    routeDetails,
-    dayType,
-    selectedRoutePatternId
-  );
+  const activePattern = getActiveRoutePattern(routeDetails, dayType, null);
 
   const routeSchedule = useMemo(() => {
     if (!selectedRoute) return [];
     const schedule = schedules[selectedRoute.id]?.[dayType] || [];
-    const selectedPatternHasNoTripsToday =
-      selectedRoutePatternId !== null &&
-      selectedRoutePatternId === activePattern?.id &&
-      !activePattern?.tripIdsByDay[dayType];
-    const allowedTripIds =
-      activePattern?.tripIdsByDay[dayType] ??
-      (selectedPatternHasNoTripsToday ? [] : undefined);
+    const allowedTripIds = activePattern?.tripIdsByDay[dayType];
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
@@ -75,13 +63,7 @@ export default function RouteDetail() {
         return hours * 60 + minutes >= nowMinutes - 30;
       })
       .slice(0, 10);
-  }, [
-    activePattern,
-    dayType,
-    schedules,
-    selectedRoute,
-    selectedRoutePatternId,
-  ]);
+  }, [activePattern, dayType, schedules, selectedRoute]);
 
   if (!selectedRoute) return null;
 
@@ -175,32 +157,6 @@ export default function RouteDetail() {
                 </Badge>
               )}
             </div>
-
-            {routeDetails.patterns.length > 1 && (
-              <div className="flex flex-wrap gap-1.5">
-                {routeDetails.patterns.map(pattern => {
-                  const isActive = activePattern?.id === pattern.id;
-                  return (
-                    <button
-                      key={pattern.id}
-                      onClick={() => setSelectedRoutePatternId(pattern.id)}
-                      className="px-2.5 py-1 rounded-md text-[10px] text-left transition-colors border"
-                      style={{
-                        color: isActive ? color : "#b0aea5",
-                        borderColor: isActive
-                          ? `${color}55`
-                          : "rgba(255,255,255,0.08)",
-                        background: isActive
-                          ? `${color}18`
-                          : "rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      {pattern.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
 
             <div className="rounded-lg border border-white/8 bg-white/4 p-2.5 space-y-2">
               <div className="flex items-start gap-2">

@@ -116,6 +116,12 @@ export interface TransitStop {
   lon: number;
 }
 
+/** Full stop directory from CDN (`stops_*.json`) — used to resolve GTFS stop_ids not listed on a route's condensed stop list */
+export type StopsCatalog = Record<
+  string,
+  { name: string; lat: number; lon: number }
+>;
+
 export interface NetworkData {
   nodes: Record<
     string,
@@ -373,6 +379,88 @@ function buildServiceNotes(
   return notes;
 }
 
+/** Mutable per-route map: bundled stops plus any IDs pulled from `catalog` while parsing schedules */
+function buildStopLookupMap(route: TransitRoute): Map<string, TransitStop> {
+  const map = new Map<string, TransitStop>();
+  for (const stop of route.stops) {
+    map.set(stop.id, stop);
+  }
+  return map;
+}
+
+function getStopForTripStopId(
+  lookup: Map<string, TransitStop>,
+  catalog: StopsCatalog | null | undefined,
+  stopId: string
+): TransitStop | undefined {
+  const existing = lookup.get(stopId);
+  if (existing) return existing;
+  const raw = catalog?.[stopId];
+  if (!raw) return undefined;
+  const stop: TransitStop = {
+    id: stopId,
+    name: raw.name,
+    lat: raw.lat,
+    lon: raw.lon,
+  };
+  lookup.set(stopId, stop);
+  return stop;
+}
+
+/** Longest scheduled trip defines the fullest stop sequence for map + patterns when the bundled route stop list is condensed */
+export function enrichRoutesWithScheduleStops(
+  routes: TransitRoute[],
+  schedules: Record<string, RouteSchedule>,
+  catalog?: StopsCatalog | null
+): TransitRoute[] {
+  if (!catalog || Object.keys(catalog).length === 0) {
+    return routes;
+  }
+
+  return routes.map(route => {
+    const schedule = schedules[route.id];
+    if (!schedule) return route;
+
+    let bestTrip: TripSchedule | null = null;
+    let bestLen = 0;
+
+    for (const dayType of DAY_TYPES) {
+      for (const trip of schedule[dayType] || []) {
+        const n = trip.stops?.length ?? 0;
+        if (n > bestLen) {
+          bestLen = n;
+          bestTrip = trip;
+        }
+      }
+    }
+
+    if (!bestTrip || bestLen < 2) return route;
+
+    const stopLookup = buildStopLookupMap(route);
+    const orderedIds = [...bestTrip.stops]
+      .sort((a, b) => a.sequence - b.sequence)
+      .map(st => st.stop_id)
+      .filter((id, idx, arr) => idx === 0 || id !== arr[idx - 1]);
+
+    const resolved: TransitStop[] = [];
+    for (const id of orderedIds) {
+      const stop = getStopForTripStopId(stopLookup, catalog, id);
+      if (stop) resolved.push(stop);
+    }
+
+    if (resolved.length < 2) return route;
+
+    if (
+      resolved.length > route.stops.length ||
+      route.stops.length === 0
+    ) {
+      return { ...route, stops: resolved };
+    }
+
+    return route;
+  });
+}
+
 function getFallbackPattern(route: TransitRoute): RoutePattern {
   return {
     id: `${route.id}::fallback`,
@@ -417,9 +505,10 @@ function buildPatternLabels(patterns: RoutePattern[]): RoutePattern[] {
 
 export function buildRouteDetails(
   route: TransitRoute,
-  schedule?: RouteSchedule
+  schedule?: RouteSchedule,
+  catalog?: StopsCatalog | null
 ): RouteDetails {
-  const stopLookup = new Map(route.stops.map(stop => [stop.id, stop]));
+  const stopLookup = buildStopLookupMap(route);
   const patternMap = new Map<string, RoutePattern>();
   const serviceDays: DayType[] = [];
 
@@ -435,7 +524,10 @@ export function buildRouteDetails(
           .sort((a, b) => a.sequence - b.sequence)
           .map(stopTime => stopTime.stop_id)
           .filter((stopId, index, arr) => arr[index - 1] !== stopId)
-          .filter(stopId => stopLookup.has(stopId));
+          .filter(
+            stopId =>
+              getStopForTripStopId(stopLookup, catalog, stopId) !== undefined
+          );
 
         if (stopIds.length < 2) continue;
 
@@ -458,7 +550,7 @@ export function buildRouteDetails(
             label: route.long_name,
             stopIds,
             stops: stopIds
-              .map(stopId => stopLookup.get(stopId)!)
+              .map(stopId => getStopForTripStopId(stopLookup, catalog, stopId)!)
               .filter(Boolean),
             dayTypes: [dayType],
             tripCount: 1,
@@ -496,12 +588,13 @@ export function buildRouteDetails(
 
 export function buildRouteDetailsMap(
   routes: TransitRoute[],
-  schedules: Record<string, RouteSchedule>
+  schedules: Record<string, RouteSchedule>,
+  catalog?: StopsCatalog | null
 ): Record<string, RouteDetails> {
   return Object.fromEntries(
     routes.map(route => [
       route.id,
-      buildRouteDetails(route, schedules[route.id]),
+      buildRouteDetails(route, schedules[route.id], catalog),
     ])
   );
 }

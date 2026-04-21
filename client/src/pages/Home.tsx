@@ -32,7 +32,6 @@ export default function Home() {
     routeDetailsById,
     loading,
     selectedRoute,
-    selectedRoutePatternId,
     setSelectedRoute,
   } = useTransit();
   const [mapReady, setMapReady] = useState(false);
@@ -159,7 +158,7 @@ export default function Home() {
     const activePattern = getActiveRoutePattern(
       routeDetailsById[selectedRoute.id],
       dayType,
-      selectedRoutePatternId
+      null
     );
     const displayedStops = activePattern?.stops || selectedRoute.stops;
 
@@ -255,46 +254,88 @@ export default function Home() {
       markersRef.current.push(marker);
     });
 
-    // AUTO-ZOOM: Use the STOPS as bounds (more reliable than shape data)
-    // This ensures the map zooms directly to where the route's stops actually are
+    // AUTO-ZOOM: Fit to stop locations first (matches rider-facing stop list).
+    // Shape polylines sometimes include stray vertices; including the full polyline
+    // in bounds pulled the camera toward unrelated areas on first click.
     if (displayedStops.length > 0) {
       const bounds = new google.maps.LatLngBounds();
       displayedStops.forEach(stop => {
         bounds.extend({ lat: stop.lat, lng: stop.lon });
       });
-      // Also include shape points for complete coverage
-      if (selectedRoute.shape && selectedRoute.shape.length > 0) {
+
+      const ne = bounds.getNorthEast();
+      const sw = bounds.getSouthWest();
+      const spanDeg = Math.max(
+        Math.abs(ne.lat() - sw.lat()),
+        Math.abs(ne.lng() - sw.lng())
+      );
+      // Single-stop or nearly coincident stops: merge in the route shape so we still frame the line
+      if (
+        (displayedStops.length < 2 || spanDeg < 0.0001) &&
+        selectedRoute.shape &&
+        selectedRoute.shape.length > 1
+      ) {
         selectedRoute.shape.forEach(([lat, lng]) =>
           bounds.extend({ lat, lng })
         );
       }
+
       const isMobile = window.innerWidth < 768;
       const padding = isMobile
         ? { top: 80, bottom: 60, left: 20, right: 20 }
         : { top: 80, bottom: 40, left: 340, right: 420 };
-      // Defer fitBounds until after the current render commits so the map
-      // has finished processing the polyline/marker updates from the same
-      // render cycle. Without this, the very first selection can race with
-      // the 138+ polylines being (re)added and fitBounds ends up using
-      // stale projection state — causing the map to zoom to an unrelated
-      // part of Long Island until a subsequent click resettles it.
+
       const targetMap = mapRef.current;
       const targetRouteId = selectedRoute.id;
+
+      const runFit = () => {
+        if (!mapRef.current || mapRef.current !== targetMap) return;
+        if (selectedRouteIdRef.current !== targetRouteId) return;
+        targetMap.fitBounds(bounds, padding);
+      };
+
+      // Wait until the map finishes its current frame/tile work so fitBounds
+      // uses a valid projection (avoids first-click jump to the wrong region).
+      let idleListener: google.maps.MapsEventListener | null = null;
+      let fallbackTimer: number | null = null;
+      let cancelled = false;
+      const scheduleFit = () => {
+        if (cancelled) return;
+        idleListener = google.maps.event.addListenerOnce(
+          targetMap,
+          "idle",
+          () => {
+            idleListener = null;
+            if (fallbackTimer !== null) {
+              window.clearTimeout(fallbackTimer);
+              fallbackTimer = null;
+            }
+            runFit();
+          }
+        );
+      };
+
       let raf2: number | null = null;
       const raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => {
-          // Bail out if the selection changed (or was cleared) in the
-          // meantime. We compare against the ref rather than the captured
-          // `selectedRoute` — the captured closure value is always equal to
-          // `targetRouteId`, so only the ref reflects the current state.
-          if (!mapRef.current || mapRef.current !== targetMap) return;
-          if (selectedRouteIdRef.current !== targetRouteId) return;
-          targetMap.fitBounds(bounds, padding);
-        });
+        raf2 = requestAnimationFrame(scheduleFit);
       });
+
+      fallbackTimer = window.setTimeout(() => {
+        fallbackTimer = null;
+        if (cancelled) return;
+        if (idleListener) {
+          google.maps.event.removeListener(idleListener);
+          idleListener = null;
+        }
+        runFit();
+      }, 400);
+
       return () => {
+        cancelled = true;
         cancelAnimationFrame(raf1);
         if (raf2 !== null) cancelAnimationFrame(raf2);
+        if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
+        if (idleListener) google.maps.event.removeListener(idleListener);
       };
     }
   }, [
@@ -303,7 +344,6 @@ export default function Home() {
     routeDetailsById,
     routeColors,
     selectedRoute,
-    selectedRoutePatternId,
   ]);
 
   return (
