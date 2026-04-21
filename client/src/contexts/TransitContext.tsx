@@ -9,10 +9,12 @@ import {
   DATA_URLS,
   assignRouteColors,
   buildRouteDetailsMap,
+  enrichRoutesWithScheduleStops,
   type TransitRoute,
   type NetworkData,
   type RouteSchedule,
   type RouteDetails,
+  type StopsCatalog,
 } from "@/lib/transitData";
 
 interface TransitState {
@@ -59,32 +61,45 @@ export function TransitProvider({ children }: { children: ReactNode }) {
         setError(null);
 
         // Load routes, network, AND schedules in parallel — schedules are critical for routing
-        const [routesRes, networkRes, schedulesRes] = await Promise.all([
+        const [routesRes, networkRes, schedulesRes, stopsRes] = await Promise.all([
           fetch(DATA_URLS.routes),
           fetch(DATA_URLS.network),
           fetch(DATA_URLS.schedules),
+          fetch(DATA_URLS.stops),
         ]);
 
         if (!routesRes.ok || !networkRes.ok) {
           throw new Error("Failed to fetch transit data");
         }
 
-        const routesData: TransitRoute[] = await routesRes.json();
+        let routesData: TransitRoute[] = await routesRes.json();
         const networkData: NetworkData = await networkRes.json();
 
-        setRoutes(routesData);
-        setNetwork(networkData);
-        setRouteColors(assignRouteColors(routesData));
-        setLastUpdated(new Date().toISOString());
+        let stopsCatalog: StopsCatalog | null = null;
+        if (stopsRes.ok) {
+          stopsCatalog = (await stopsRes.json()) as StopsCatalog;
+        }
 
         // Parse schedules
         if (schedulesRes.ok) {
           const schedulesData = await schedulesRes.json();
           setSchedules(schedulesData);
-          setRouteDetailsById(buildRouteDetailsMap(routesData, schedulesData));
+          routesData = enrichRoutesWithScheduleStops(
+            routesData,
+            schedulesData,
+            stopsCatalog
+          );
+          setRouteDetailsById(
+            buildRouteDetailsMap(routesData, schedulesData, stopsCatalog)
+          );
         } else {
-          setRouteDetailsById(buildRouteDetailsMap(routesData, {}));
+          setRouteDetailsById(buildRouteDetailsMap(routesData, {}, stopsCatalog));
         }
+
+        setRoutes(routesData);
+        setNetwork(networkData);
+        setRouteColors(assignRouteColors(routesData));
+        setLastUpdated(new Date().toISOString());
         setSchedulesLoading(false);
       } catch (err) {
         setError(
