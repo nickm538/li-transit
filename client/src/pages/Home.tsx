@@ -50,23 +50,27 @@ function computeRouteFitBounds(
   }
   if (points.length === 0) return null;
 
-  // Median is robust to outliers (unlike min/max). Long Island's full N-S
-  // extent is < 30 miles, so a generous 0.5° window (~35 miles) around the
-  // median includes every legitimate point on any LI bus route while still
-  // excluding any malformed vertex/stop that would otherwise pull the camera
-  // off-route.
+  // Median is robust to outliers (unlike min/max). The per-axis thresholds
+  // below are sized independently because a degree of longitude at ~40.7°N
+  // (Long Island) is ~52.5 mi, while a degree of latitude is ~69 mi. Long
+  // Island's full extent is ~120 mi E-W and ~25 mi N-S, so these windows
+  // comfortably include every legitimate point on any LI bus route while
+  // excluding malformed vertices/stops that would pull the camera off-route.
+  //   MAX_LAT_DELTA_DEG  = 0.5°  ≈ 34 mi N/S of the median
+  //   MAX_LNG_DELTA_DEG  = 1.0°  ≈ 52 mi E/W of the median
   const lats = points.map(p => p.lat).sort((a, b) => a - b);
   const lngs = points.map(p => p.lng).sort((a, b) => a - b);
   const medianLat = lats[Math.floor(lats.length / 2)];
   const medianLng = lngs[Math.floor(lngs.length / 2)];
-  const MAX_DELTA_DEG = 0.5;
+  const MAX_LAT_DELTA_DEG = 0.5;
+  const MAX_LNG_DELTA_DEG = 1.0;
 
   const bounds = new google.maps.LatLngBounds();
   let kept = 0;
   for (const p of points) {
     if (
-      Math.abs(p.lat - medianLat) <= MAX_DELTA_DEG &&
-      Math.abs(p.lng - medianLng) <= MAX_DELTA_DEG
+      Math.abs(p.lat - medianLat) <= MAX_LAT_DELTA_DEG &&
+      Math.abs(p.lng - medianLng) <= MAX_LNG_DELTA_DEG
     ) {
       bounds.extend(p);
       kept++;
@@ -339,26 +343,30 @@ export default function Home() {
       // causing fitBounds to run against an in-flight projection on the first
       // click and land on an unrelated part of Long Island.)
       let cancelled = false;
+      let didFit = false;
       let raf2: number | null = null;
       let fallbackTimer: number | null = null;
 
+      const fitOnce = () => {
+        if (cancelled || didFit) return;
+        didFit = true;
+        if (fallbackTimer !== null) {
+          window.clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
+        runFit();
+      };
+
       const raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => {
-          if (cancelled) return;
-          if (fallbackTimer !== null) {
-            window.clearTimeout(fallbackTimer);
-            fallbackTimer = null;
-          }
-          runFit();
-        });
+        raf2 = requestAnimationFrame(fitOnce);
       });
 
       // Hard fallback in case RAFs are starved (e.g. tab backgrounded while
       // selection was changing). Guarantees the map reaches the route overview.
+      // `didFit` ensures whichever path lands first is the only one that runs.
       fallbackTimer = window.setTimeout(() => {
         fallbackTimer = null;
-        if (cancelled) return;
-        runFit();
+        fitOnce();
       }, 400);
 
       return () => {
