@@ -13,6 +13,8 @@ import {
   getActiveRoutePattern,
   getDayType,
   LI_CENTER,
+  type TransitRoute,
+  type TransitStop,
 } from "@/lib/transitData";
 import { Loader2, Bus, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -20,6 +22,63 @@ import {
   SidebarProvider,
   SidebarToggleButton,
 } from "@/components/MobileSidebarToggle";
+
+/**
+ * Build a LatLngBounds that frames the visible route for a "route overview"
+ * auto-zoom. We union the polyline vertices (route.shape — exactly what the
+ * user sees drawn on the map) with the displayed stops, then trim outliers
+ * around the median lat/lng. This guarantees the camera lands on the drawn
+ * route even if an individual catalog-resolved stop or stray shape vertex
+ * sits off the actual route path.
+ */
+function computeRouteFitBounds(
+  route: TransitRoute,
+  stops: TransitStop[]
+): google.maps.LatLngBounds | null {
+  const points: { lat: number; lng: number }[] = [];
+  if (route.shape && route.shape.length > 0) {
+    for (const [lat, lng] of route.shape) {
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        points.push({ lat, lng });
+      }
+    }
+  }
+  for (const stop of stops) {
+    if (Number.isFinite(stop.lat) && Number.isFinite(stop.lon)) {
+      points.push({ lat: stop.lat, lng: stop.lon });
+    }
+  }
+  if (points.length === 0) return null;
+
+  // Median is robust to outliers (unlike min/max). The per-axis thresholds
+  // below are sized independently because a degree of longitude at ~40.7°N
+  // (Long Island) is ~52.5 mi, while a degree of latitude is ~69 mi. Long
+  // Island's full extent is ~120 mi E-W and ~25 mi N-S, so these windows
+  // comfortably include every legitimate point on any LI bus route while
+  // excluding malformed vertices/stops that would pull the camera off-route.
+  //   MAX_LAT_DELTA_DEG  = 0.5°  ≈ 34 mi N/S of the median
+  //   MAX_LNG_DELTA_DEG  = 1.0°  ≈ 52 mi E/W of the median
+  const lats = points.map(p => p.lat).sort((a, b) => a - b);
+  const lngs = points.map(p => p.lng).sort((a, b) => a - b);
+  const medianLat = lats[Math.floor(lats.length / 2)];
+  const medianLng = lngs[Math.floor(lngs.length / 2)];
+  const MAX_LAT_DELTA_DEG = 0.5;
+  const MAX_LNG_DELTA_DEG = 1.0;
+
+  const bounds = new google.maps.LatLngBounds();
+  let kept = 0;
+  for (const p of points) {
+    if (
+      Math.abs(p.lat - medianLat) <= MAX_LAT_DELTA_DEG &&
+      Math.abs(p.lng - medianLng) <= MAX_LNG_DELTA_DEG
+    ) {
+      bounds.extend(p);
+      kept++;
+    }
+  }
+  if (kept === 0 || bounds.isEmpty()) return null;
+  return bounds;
+}
 
 export default function Home() {
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -254,32 +313,14 @@ export default function Home() {
       markersRef.current.push(marker);
     });
 
-    // AUTO-ZOOM: Fit to stop locations first (matches rider-facing stop list).
-    // Shape polylines sometimes include stray vertices; including the full polyline
-    // in bounds pulled the camera toward unrelated areas on first click.
-    if (displayedStops.length > 0) {
-      const bounds = new google.maps.LatLngBounds();
-      displayedStops.forEach(stop => {
-        bounds.extend({ lat: stop.lat, lng: stop.lon });
-      });
-
-      const ne = bounds.getNorthEast();
-      const sw = bounds.getSouthWest();
-      const spanDeg = Math.max(
-        Math.abs(ne.lat() - sw.lat()),
-        Math.abs(ne.lng() - sw.lng())
-      );
-      // Single-stop or nearly coincident stops: merge in the route shape so we still frame the line
-      if (
-        (displayedStops.length < 2 || spanDeg < 0.0001) &&
-        selectedRoute.shape &&
-        selectedRoute.shape.length > 1
-      ) {
-        selectedRoute.shape.forEach(([lat, lng]) =>
-          bounds.extend({ lat, lng })
-        );
-      }
-
+    // AUTO-ZOOM: Frame the selected route using the visible polyline (route.shape)
+    // unioned with its displayed stops, then trim outliers around the median so a
+    // stray shape vertex or catalog-resolved stop can't pull the camera off-route.
+    // Using shape as the primary source guarantees bounds match what the user sees
+    // drawn on the map — the earlier stop-only approach could miszoom the first
+    // click when an enriched stop sat off the actual route path.
+    const bounds = computeRouteFitBounds(selectedRoute, displayedStops);
+    if (bounds) {
       const isMobile = window.innerWidth < 768;
       const padding = isMobile
         ? { top: 80, bottom: 60, left: 20, right: 20 }
@@ -294,40 +335,38 @@ export default function Home() {
         targetMap.fitBounds(bounds, padding);
       };
 
-      // Wait until the map finishes its current frame/tile work so fitBounds
-      // uses a valid projection (avoids first-click jump to the wrong region).
-      let idleListener: google.maps.MapsEventListener | null = null;
-      let fallbackTimer: number | null = null;
+      // Defer past the current commit so the polyline/marker additions from
+      // this same render flush first. Two RAFs reliably place fitBounds after
+      // the browser has painted the new overlay state. (A previous revision
+      // waited on the map's `idle` event here, but that event can fire
+      // transiently while the 138-route polyline redraw is still committing —
+      // causing fitBounds to run against an in-flight projection on the first
+      // click and land on an unrelated part of Long Island.)
       let cancelled = false;
-      const scheduleFit = () => {
-        if (cancelled) return;
-        idleListener = google.maps.event.addListenerOnce(
-          targetMap,
-          "idle",
-          () => {
-            idleListener = null;
-            if (fallbackTimer !== null) {
-              window.clearTimeout(fallbackTimer);
-              fallbackTimer = null;
-            }
-            runFit();
-          }
-        );
-      };
-
+      let didFit = false;
       let raf2: number | null = null;
-      const raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(scheduleFit);
-      });
+      let fallbackTimer: number | null = null;
 
-      fallbackTimer = window.setTimeout(() => {
-        fallbackTimer = null;
-        if (cancelled) return;
-        if (idleListener) {
-          google.maps.event.removeListener(idleListener);
-          idleListener = null;
+      const fitOnce = () => {
+        if (cancelled || didFit) return;
+        didFit = true;
+        if (fallbackTimer !== null) {
+          window.clearTimeout(fallbackTimer);
+          fallbackTimer = null;
         }
         runFit();
+      };
+
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(fitOnce);
+      });
+
+      // Hard fallback in case RAFs are starved (e.g. tab backgrounded while
+      // selection was changing). Guarantees the map reaches the route overview.
+      // `didFit` ensures whichever path lands first is the only one that runs.
+      fallbackTimer = window.setTimeout(() => {
+        fallbackTimer = null;
+        fitOnce();
       }, 400);
 
       return () => {
@@ -335,16 +374,9 @@ export default function Home() {
         cancelAnimationFrame(raf1);
         if (raf2 !== null) cancelAnimationFrame(raf2);
         if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
-        if (idleListener) google.maps.event.removeListener(idleListener);
       };
     }
-  }, [
-    dayType,
-    mapReady,
-    routeDetailsById,
-    routeColors,
-    selectedRoute,
-  ]);
+  }, [dayType, mapReady, routeDetailsById, routeColors, selectedRoute]);
 
   return (
     <SidebarProvider>
